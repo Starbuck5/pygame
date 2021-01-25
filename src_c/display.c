@@ -1154,7 +1154,7 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
             if (win) {
                 if (SDL_GetWindowDisplayIndex(win) == display) {
                     //fullscreen windows don't hold window x and y as needed
-                    if (SDL_GetWindowFlags(win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) { 
+                    if (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN || SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP)) { 
                         printf("OH MY JESUS CHRIST\n");
                         x = state->fullscreen_backup_x;
                         y = state->fullscreen_backup_y;
@@ -1259,7 +1259,7 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
 
                 // SDL doesn't preserve window position in fullscreen mode
                 // However, windows coming out of fullscreen need these to go back into the correct position
-                if (sdl_flags & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) {
+                if (sdl_flags & SDL_WINDOW_FULLSCREEN || sdl_flags & SDL_WINDOW_FULLSCREEN_DESKTOP)) {
                     state->fullscreen_backup_x = x;
                     state->fullscreen_backup_y = y;
                 }
