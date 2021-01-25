@@ -1148,10 +1148,14 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
                 y = SDL_WINDOWPOS_CENTERED_DISPLAY(display);
             }
 
+            printf("line 1149: x=%d, y=%d \n", x, y);
+            printf("sdl_flags WINDOW_FULLSCREEN=%d, WINDOW_FULLSCREEN_DESKTOP=%d\n", sdl_flags & SDL_WINDOW_FULLSCREEN, sdl_flags & SDL_WINDOW_FULLSCREEN_DESKTOP);
+
             if (win) {
                 if (SDL_GetWindowDisplayIndex(win) == display) {
                     //fullscreen windows don't hold window x and y as needed
                     if (SDL_GetWindowFlags(win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) { 
+                        printf("OH MY JESUS CHRIST\n");
                         x = state->fullscreen_backup_x;
                         y = state->fullscreen_backup_y;
                     }
@@ -1159,6 +1163,7 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
                         SDL_GetWindowPosition(win, &x, &y);
                     }
                     
+                    printf("line 1154: x=%d, y=%d\n", x, y);
                 }
                 if (!(flags & PGS_OPENGL) !=
                     !(SDL_GetWindowFlags(win) & SDL_WINDOW_OPENGL)) {
@@ -1220,6 +1225,7 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
 
             if (!win) {
                 /*open window*/
+                printf("line 1216 creating window: x=%d, y=%d, w_1=%d, h_1=%d\n", x, y, w_1, h_1);
                 win = SDL_CreateWindow(title, x, y, w_1, h_1, sdl_flags);
                 if (!win)
                     return RAISE(pgExc_SDLError, SDL_GetError());
@@ -1229,6 +1235,7 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
                 /* change existing window.
                  this invalidates the display surface*/
                 SDL_SetWindowTitle(win, title);
+                printf("line 1226 setting window size: w_1=%d, h_1=%d\n", w_1, h_1);
                 SDL_SetWindowSize(win, w_1, h_1);
 
 #if (SDL_VERSION_ATLEAST(2, 0, 5))
@@ -1241,6 +1248,7 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
                 else if (flags & PGS_HIDDEN)
                     SDL_HideWindow(win);
 
+                printf("line 1239 setting window pos: x=%d, y=%d\n", x, y);
                 SDL_SetWindowPosition(win, x, y);
                 if (0 !=
                     SDL_SetWindowFullscreen(
@@ -1383,6 +1391,7 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
                 newownedsurf = surf;
             }
             else {
+                printf("line 1375 checking in \n");
                 surf = SDL_GetWindowSurface(win);
             }
         }
