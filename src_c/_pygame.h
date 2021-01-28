@@ -37,6 +37,7 @@
 
 /* IS_SDLv1 is 1 if SDL 1.x.x, 0 otherwise */
 /* IS_SDLv2 is 1 if at least SDL 2.0.0, 0 otherwise */
+/*
 #if (SDL_VERSION_ATLEAST(2, 0, 0))
 #define IS_SDLv2 1
 #define IS_SDLv1 0
@@ -44,6 +45,10 @@
 #define IS_SDLv2 0
 #define IS_SDLv1 1
 #endif
+*/
+
+#define IS_SDLv2 1
+#define IS_SDLv1 0
 
 /*#if IS_SDLv1 && PG_MAJOR_VERSION >= 2
 #error pygame 2 requires SDL 2

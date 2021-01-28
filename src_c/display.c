@@ -1022,7 +1022,7 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
                                     SDL_HINT_NORMAL);
         }
     }
-
+    printf("set_mode start\n");
     if (w < 0 || h < 0)
         return RAISE(pgExc_SDLError, "Cannot set negative sized display mode");
 
@@ -1151,9 +1151,14 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
             if (win) {
                 if (SDL_GetWindowDisplayIndex(win) == display) {
                     //fullscreen windows don't hold window x and y as needed
-                    if (SDL_GetWindowFlags(win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) { 
+                    if (SDL_GetWindowFlags(win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) {
                         x = state->fullscreen_backup_x;
                         y = state->fullscreen_backup_y;
+                        if (x == SDL_WINDOWPOS_UNDEFINED_DISPLAY(display))
+                            x = SDL_WINDOWPOS_CENTERED_DISPLAY(display);
+                        if (y == SDL_WINDOWPOS_UNDEFINED_DISPLAY(display))
+                            y = SDL_WINDOWPOS_CENTERED_DISPLAY(display); 
+                        printf("getting backup x=%d, y=%d\n", x, y); 
                     }
                     else {
                         SDL_GetWindowPosition(win, &x, &y);
@@ -1166,6 +1171,8 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
                     win = NULL;
                 }
             }
+
+            printf("line 1171 checkin x=%d, y=%d\n", x, y); 
 
             if (flags & PGS_SCALED && !(flags & PGS_FULLSCREEN)) {
                 SDL_Rect display_bounds;
@@ -1221,6 +1228,7 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
             // SDL doesn't preserve window position in fullscreen mode
             // However, windows coming out of fullscreen need these to go back into the correct position
             if (sdl_flags & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) {
+                printf("setting backup x=%d, y=%d\n", x, y);
                 state->fullscreen_backup_x = x;
                 state->fullscreen_backup_y = y;
             }
@@ -1248,13 +1256,16 @@ pg_set_mode(PyObject *self, PyObject *arg, PyObject *kwds)
                 else if (flags & PGS_HIDDEN)
                     SDL_HideWindow(win);
 
-                SDL_SetWindowPosition(win, x, y);
+                printf("line 1259 checkin x=%d, y=%d\n", x, y);
+                
                 if (0 !=
                     SDL_SetWindowFullscreen(
                         win, sdl_flags & (SDL_WINDOW_FULLSCREEN |
                                           SDL_WINDOW_FULLSCREEN_DESKTOP))) {
                     return RAISE(pgExc_SDLError, SDL_GetError());
                 }
+
+                SDL_SetWindowPosition(win, x, y);
 
                 assert(surface);
             }
