@@ -213,12 +213,10 @@ def warn_unwanted_files():
 # disable, because we hopefully don't need it.
 # warn_unwanted_files()
 
-
 try:
     from pygame.surface import Surface, SurfaceType
 except (ImportError, IOError):
     Surface = lambda: Missing_Function
-
 
 try:
     import pygame.mask
@@ -231,10 +229,7 @@ try:
 except (ImportError, IOError):
     PixelArray = lambda: Missing_Function
 
-try:
-    from pygame.overlay import Overlay
-except (ImportError, IOError):
-    Overlay = lambda: Missing_Function
+Overlay = lambda: Missing_Function
 
 try:
     import pygame.time
@@ -275,15 +270,7 @@ try:
 except (ImportError, IOError):
     mixer = MissingModule("mixer", urgent=0)
 
-try:
-    import pygame.movie
-except (ImportError, IOError):
-    movie = MissingModule("movie", urgent=0)
-
-# try:
-#     import pygame.movieext
-# except (ImportError,IOError):
-#     movieext=MissingModule("movieext", urgent=0)
+movie = MissingModule("movie", urgent=0)
 
 try:
     import pygame.scrap

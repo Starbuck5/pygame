@@ -26,6 +26,9 @@
 /docs/index.html
 /docs/ref/*.html
 
+# MacOS temporary files
+.DS_Store
+
 # Emacs temporary files
 *~
 
