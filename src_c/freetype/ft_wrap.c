@@ -528,6 +528,10 @@ _PGFT_UnloadFont(FreeTypeInstance *ft, pgFontObject *fontobj)
     fontobj->id.open_args.flags = 0;
 }
 
+void _PGFT_GetVersion(FreeTypeInstance *ft, int *major, int *minor, int *patch) {
+    FT_Library_Version(ft->library, major, minor, patch);
+}
+
 
 /*********************************************************
  *

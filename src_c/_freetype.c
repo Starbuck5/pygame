@@ -2167,8 +2167,12 @@ static PyObject *
 _ft_get_version(PyObject *self, PyObject *args)
 {
     /* Return the linked FreeType2 version */
-    return Py_BuildValue("iii", FREETYPE_MAJOR, FREETYPE_MINOR,
-                         FREETYPE_PATCH);
+    int major;
+    int minor;
+    int patch;
+
+    _PGFT_GetVersion(FREETYPE_STATE->freetype, &major, &minor, &patch);
+    return Py_BuildValue("iii", major, minor, patch);
 }
 
 static PyObject *
