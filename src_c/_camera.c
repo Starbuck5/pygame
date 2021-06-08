@@ -182,6 +182,9 @@ list_cameras(PyObject *self, PyObject *arg)
     free(devices);
 
     return ret_list;
+
+#elif defined(PYGAME_WINDOWS_CAMERA)
+    return PyLong_FromLong(0);
 #else
     Py_RETURN_NONE;
 #endif

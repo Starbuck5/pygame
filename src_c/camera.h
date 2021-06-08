@@ -53,9 +53,17 @@
 #endif
 
 #if defined(PYGAME_MAC_CAMERA_OLD)
-        #include <QuickTime/QuickTime.h>
-        #include <QuickTime/Movies.h>
-        #include <QuickTime/ImageCompression.h>
+    #include <QuickTime/QuickTime.h>
+    #include <QuickTime/Movies.h>
+    #include <QuickTime/ImageCompression.h>
+#endif
+
+#if defined(__WIN32__)
+    #include <mfapi.h>
+    #include <mfobjects.h>
+    #include <mfidl.h>
+
+    #define PYGAME_WINDOWS_CAMERA 1
 #endif
 
 /* some constants used which are not defined on non-v4l machines. */
