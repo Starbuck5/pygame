@@ -146,10 +146,15 @@ surf_colorspace(PyObject *self, PyObject *arg)
 PyObject *
 list_cameras(PyObject *self, PyObject *arg)
 {
-#if defined(__unix__) || defined(PYGAME_MAC_CAMERA_OLD)
+#if defined(__unix__) || defined(PYGAME_MAC_CAMERA_OLD) || \
+defined(PYGAME_WINDOWS_CAMERA)
     PyObject *ret_list;
     PyObject *string;
+#if !defined(PYGAME_WINDOWS_CAMERA)
     char **devices;
+#else
+    WCHAR **devices;
+#endif
     int num_devices, i;
 
     num_devices = 0;
@@ -162,10 +167,15 @@ list_cameras(PyObject *self, PyObject *arg)
     devices = v4l2_list_cameras(&num_devices);
 #elif defined(PYGAME_MAC_CAMERA_OLD)
     devices = mac_list_cameras(&num_devices);
+#elif defined(PYGAME_WINDOWS_CAMERA)
+    devices = windows_list_cameras(&num_devices);
 #endif
-
     for (i = 0; i < num_devices; i++) {
+#if !defined(PYGAME_WINDOWS_CAMERA)
         string = Text_FromUTF8(devices[i]);
+#else
+        string = PyUnicode_FromWideChar(devices[i], -1);
+#endif
         if (0 != PyList_Append(ret_list, string)) {
             /* Append failed; clean up and return */
             Py_DECREF(ret_list);
@@ -182,9 +192,6 @@ list_cameras(PyObject *self, PyObject *arg)
     free(devices);
 
     return ret_list;
-
-#elif defined(PYGAME_WINDOWS_CAMERA)
-    return PyLong_FromLong(_win_list_cameras());
 #else
     Py_RETURN_NONE;
 #endif

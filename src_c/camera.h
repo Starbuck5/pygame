@@ -208,6 +208,10 @@ int mac_copy_gworld_to_surface(pgCameraObject* self, SDL_Surface* surf);
 void flip_image(const void* image, void* flipped_image, int width, int height,
                 short depth, int hflip, int vflip);
 
+#elif defined(PYGAME_WINDOWS_CAMERA)
+/* internal functions specific to WINDOWS */
+WCHAR** windows_list_cameras(int* num_devices);
+
 #endif
 
 #endif /* !CAMERA_H */
