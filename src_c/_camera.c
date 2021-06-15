@@ -223,6 +223,8 @@ camera_start(pgCameraObject *self, PyObject *args)
         mac_close_device(self);
         return NULL;
     }
+#elif defined(PYGAME_WINDOWS_CAMERA)
+    windows_open_device(self);
 #endif
     Py_RETURN_NONE;
 }
@@ -1896,6 +1898,34 @@ Camera(pgCameraObject *self, PyObject *arg)
         cameraobj->hflip = 0;
         cameraobj->vflip = 0;
     }
+
+    return (PyObject *)cameraobj;
+
+#elif defined(PYGAME_WINDOWS_CAMERA)
+    pgCameraObject *cameraobj;
+    PyObject* name_obj = NULL;
+    WCHAR* dev_name = NULL;
+    int w, h;
+    char* color;
+    IMFActivate* p = NULL;
+
+    if (!PyArg_ParseTuple(arg, "O|(ii)s", &name_obj, &w, &h, &color))
+        return NULL;
+
+    //needs to be freed with PyMem_Free later
+    dev_name = PyUnicode_AsWideCharString(name_obj, NULL);
+
+    printf("dev_name = %ls\n", dev_name);
+
+    p = windows_device_from_name(dev_name);
+
+    if (!p) {
+        return RAISE(PyExc_ValueError, "Couldn't find a camera with that name");
+    }
+
+    cameraobj = PyObject_NEW(pgCameraObject, &pgCamera_Type);
+
+    
 
     return (PyObject *)cameraobj;
 #endif

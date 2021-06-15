@@ -127,6 +127,17 @@ typedef struct pgCameraObject {
     struct buffer pixels;
     //struct buffer tmp_pixels        /* place where the flipped image in temporarily stored if hflip or vflip is true.*/
 } pgCameraObject;
+#elif defined(PYGAME_WINDOWS_CAMERA)
+typedef struct pgCameraObject {
+    PyObject_HEAD
+    WCHAR* device_name;
+    int width;
+    int height;
+    int size;
+    int hflip;
+    int vflip;
+    int brightness;
+} pgCameraObject;
 
 #else
 /* generic definition.
@@ -211,6 +222,9 @@ void flip_image(const void* image, void* flipped_image, int width, int height,
 #elif defined(PYGAME_WINDOWS_CAMERA)
 /* internal functions specific to WINDOWS */
 WCHAR** windows_list_cameras(int* num_devices);
+int windows_init_device(pgCameraObject* self);
+int windows_open_device(pgCameraObject* self);
+IMFActivate* windows_device_from_name(WCHAR* device_name);
 
 #endif
 

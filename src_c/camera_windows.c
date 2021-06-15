@@ -5,7 +5,8 @@
 #include <mfobjects.h>
 #include <mfidl.h>
 
-WCHAR* get_attr_string(IMFActivate *pActive) {
+WCHAR *
+get_attr_string(IMFActivate *pActive) {
     HRESULT hr = S_OK;
     UINT32 cchLength = 0;
     WCHAR *res = NULL;
@@ -31,49 +32,6 @@ WCHAR* get_attr_string(IMFActivate *pActive) {
     //return hr;
     return (WCHAR *)res;
 }
-
-int
-_win_list_cameras() {
-    IMFMediaSource *pSource = NULL;
-    IMFAttributes *pAttributes = NULL;
-    IMFActivate **ppDevices = NULL;
-
-    HRESULT hr = MFCreateAttributes(&pAttributes, 1);
-    if (FAILED(hr)) {
-        printf("oof\n");
-    }
-
-    hr = pAttributes->lpVtbl->SetGUID(pAttributes, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, 
-                              &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
-
-    if (FAILED(hr)) {
-        printf("oof2\n");
-    }
-
-    UINT32 count = -1;
-    hr = MFEnumDeviceSources(pAttributes, &ppDevices, &count);
-
-    WCHAR *res = get_attr_string(ppDevices[0]);
-    printf("does this print? %ls\n", res);
-    free(res);
-
-    if (FAILED(hr)) {
-        printf("oof3\n");
-    }
-
-    printf("This computer has %i camera(s)\n", count);
-
-    PyObject* ret;
-    ret = PyLong_FromLong(40);
-    
-    //Py_RETURN_NONE;
-
-    return 7;
-
-    //return ret;
-}
-
-// WCHAR* japan = l"餅もち";
 
 WCHAR **
 windows_list_cameras(int *num_devices) {
@@ -109,4 +67,51 @@ windows_list_cameras(int *num_devices) {
 
     *num_devices = count;
     return devices;
+}
+
+//wcscmp
+IMFActivate *
+windows_device_from_name(WCHAR* device_name) {
+    IMFAttributes *pAttributes = NULL;
+    IMFActivate **ppDevices = NULL;
+    WCHAR* _device_name = NULL;
+
+    HRESULT hr = MFCreateAttributes(&pAttributes, 1);
+    if (FAILED(hr)) {
+        printf("oof\n");
+    }
+
+    hr = pAttributes->lpVtbl->SetGUID(pAttributes, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, 
+                              &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
+
+    if (FAILED(hr)) {
+        printf("oof2\n");
+    }
+
+    UINT32 count = -1;
+    hr = MFEnumDeviceSources(pAttributes, &ppDevices, &count);
+
+    if (FAILED(hr)) {
+        printf("oof_3\n");
+    }
+
+    for (int i=0; i<count; i++) {
+        _device_name = get_attr_string(ppDevices[i]);
+        if (!wcscmp(_device_name, device_name)) {
+            free(_device_name);
+            return ppDevices[i];
+        }
+        free(_device_name);
+    }
+    return NULL;
+}
+
+int windows_init_device(pgCameraObject *self) {
+    printf("imagine that\n");
+    return 1;
+}
+
+int windows_open_device(pgCameraObject *self) {
+    printf("made it here\n");
+    return 1;
 }
