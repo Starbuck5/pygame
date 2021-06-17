@@ -4,6 +4,8 @@
 #include <mfapi.h>
 #include <mfobjects.h>
 #include <mfidl.h>
+#include <mfreadwrite.h>
+#include <combaseapi.h>
 
 WCHAR *
 get_attr_string(IMFActivate *pActive) {
@@ -65,6 +67,8 @@ windows_list_cameras(int *num_devices) {
         devices[i] = get_attr_string(ppDevices[i]);
     }
 
+    // TODO: Release ppDevices?
+
     *num_devices = count;
     return devices;
 }
@@ -103,6 +107,9 @@ windows_device_from_name(WCHAR* device_name) {
         }
         free(_device_name);
     }
+
+    // TODO: Release ppDevices?
+
     return NULL;
 }
 
@@ -113,5 +120,43 @@ int windows_init_device(pgCameraObject *self) {
 
 int windows_open_device(pgCameraObject *self) {
     printf("made it here\n");
+
+    /* setup the stuff before MFCreateSourceReaderFromMediaSource is called */
+    // TODO: error check
+    CoInitializeEx(0, COINIT_MULTITHREADED); //I don't want multithreading, but it seems default
+    MFStartup(MF_VERSION, MFSTARTUP_LITE);
+
+    IMFMediaSource *source;
+    IMFSourceReader *reader = NULL;
+    IMFMediaType *media_type;
+
+    self->activate->lpVtbl->ActivateObject(self->activate, &IID_IMFMediaSource, &source);
+    self->source = source;
+
+    MFCreateSourceReaderFromMediaSource(source, NULL, &reader);
+
+    self->reader = reader;
+    
+    //TODO: release the interface
+    MFCreateMediaType(&media_type);
+
+    media_type->lpVtbl->SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Video);
+    media_type->lpVtbl->SetGUID(media_type, &MF_MT_SUBTYPE, &MFVideoFormat_RGB8);
+
+    reader->lpVtbl->SetCurrentMediaType(reader, 0, NULL, media_type);
+
+    return 1;
+}
+
+int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
+    printf("I'm a frame, what? \n");
+
+    IMFSourceReader *reader = self->reader;
+    IMFSample *sample = NULL;
+
+    reader->lpVtbl->ReadSample(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, 0, 0, 0, &sample);
+
+    printf("sample=%p\n", sample);
+
     return 1;
 }

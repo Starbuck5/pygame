@@ -62,6 +62,8 @@
     #include <mfapi.h>
     #include <mfobjects.h>
     #include <mfidl.h>
+    #include <mfreadwrite.h>
+    #include <combaseapi.h>
 
     #define PYGAME_WINDOWS_CAMERA 1
 #endif
@@ -131,6 +133,9 @@ typedef struct pgCameraObject {
 typedef struct pgCameraObject {
     PyObject_HEAD
     WCHAR* device_name;
+    IMFActivate* activate;
+    IMFMediaSource* source;
+    IMFSourceReader* reader;
     int width;
     int height;
     int size;

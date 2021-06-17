@@ -434,6 +434,36 @@ camera_get_image(pgCameraObject *self, PyObject *arg)
     else {
         return (PyObject *)pgSurface_New(surf);
     }
+#elif defined(PYGAME_WINDOWS_CAMERA)
+    SDL_Surface *surf = NULL;
+    pgSurfaceObject *surfobj = NULL;
+
+    int width = 600;
+    int height = 400;
+
+    if (!PyArg_ParseTuple(arg, "|O!", &pgSurface_Type, &surfobj))
+        return NULL;
+
+    if (!surfobj) {
+        surf = SDL_CreateRGBSurface(0, width, height, 24, //32?
+                                    0xFF << 16, 0xFF << 8, 0xFF, 0);
+    }
+    else {
+        surf = pgSurface_AsSurface(surfobj);
+    }
+
+    if(!windows_read_frame(self, surf)) {
+        return NULL;
+    }
+
+    if (surfobj) {
+        Py_INCREF(surfobj);
+        return (PyObject *)surfobj;
+    }
+    else {
+        return (PyObject *)pgSurface_New(surf);
+    }
+
 #endif
     Py_RETURN_NONE;
 }
@@ -1925,7 +1955,8 @@ Camera(pgCameraObject *self, PyObject *arg)
 
     cameraobj = PyObject_NEW(pgCameraObject, &pgCamera_Type);
 
-    
+    cameraobj->device_name = dev_name;
+    cameraobj->activate = p;
 
     return (PyObject *)cameraobj;
 #endif
