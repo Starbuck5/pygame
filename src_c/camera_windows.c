@@ -154,9 +154,16 @@ int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
     IMFSourceReader *reader = self->reader;
     IMFSample *sample = NULL;
 
-    reader->lpVtbl->ReadSample(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, 0, 0, 0, &sample);
+    HRESULT hr;
+
+    LONGLONG pllTimestamp;
+    DWORD pdwStreamFlags;
+
+    hr = reader->lpVtbl->ReadSample(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, 0, &pdwStreamFlags, &pllTimestamp, &sample);
 
     printf("sample=%p\n", sample);
+    printf("hr=%i\n", hr);
+    //printf("MF_E_INVALIDREQUEST=%i\n", MF_E_INVALIDREQUEST);
 
     return 1;
 }
