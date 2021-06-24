@@ -7,6 +7,8 @@
 #include <mfreadwrite.h>
 #include <combaseapi.h>
 
+#define RELEASE(obj) obj->lpVtbl->Release(obj)
+
 WCHAR *
 get_attr_string(IMFActivate *pActive) {
     HRESULT hr = S_OK;
@@ -128,7 +130,7 @@ int windows_open_device(pgCameraObject *self) {
 
     IMFMediaSource *source;
     IMFSourceReader *reader = NULL;
-    IMFMediaType *media_type;
+    IMFMediaType *media_type = NULL;
 
     self->activate->lpVtbl->ActivateObject(self->activate, &IID_IMFMediaSource, &source);
     self->source = source;
@@ -137,13 +139,25 @@ int windows_open_device(pgCameraObject *self) {
 
     self->reader = reader;
     
+    HRESULT hr;
+
     //TODO: release the interface
-    MFCreateMediaType(&media_type);
+    hr = MFCreateMediaType(&media_type);
+    printf("RESULT CREATEMEDIA=%i\n", hr);
 
-    media_type->lpVtbl->SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Video);
-    media_type->lpVtbl->SetGUID(media_type, &MF_MT_SUBTYPE, &MFVideoFormat_RGB24);
+    hr = media_type->lpVtbl->SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Video);
+    printf("RESULT SETMAJOR=%i\n", hr);
+    hr = media_type->lpVtbl->SetGUID(media_type, &MF_MT_SUBTYPE, &MFVideoFormat_RGB24);
+    printf("RESULT SETMINOR=%i\n", hr);
 
-    reader->lpVtbl->SetCurrentMediaType(reader, 0, NULL, media_type);
+    hr = reader->lpVtbl->SetCurrentMediaType(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, NULL, media_type);
+    printf("RESULT SETMEDIA=%i\n", hr);
+
+    /* aborted attempt to find native media type */
+    //reader->lpVtbl->GetCurrentMediaType(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, &media_type);
+    //GUID g;
+    //media_type->lpVtbl->GetGUID(media_type, &MF_MT_SUBTYPE, &g);
+    //printf
 
     return 1;
 }
@@ -196,6 +210,9 @@ int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
         printf("made it 4\n");
 
         buf->lpVtbl->Unlock(buf);
+
+        RELEASE(buf);
+        RELEASE(sample);
 
         SDL_UnlockSurface(surf);
     }
