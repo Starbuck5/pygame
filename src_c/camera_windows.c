@@ -7,7 +7,8 @@
 #include <mfreadwrite.h>
 #include <combaseapi.h>
 
-#define RELEASE(obj) obj->lpVtbl->Release(obj)
+#define RELEASE(obj) if (obj) {obj->lpVtbl->Release(obj);}
+#define CHECKHR(hr) if FAILED(hr) {PyErr_SetString(pgExc_SDLError, "Media Foundation HRESULT failure"); return NULL;}
 
 WCHAR *
 get_attr_string(IMFActivate *pActive) {
@@ -115,14 +116,7 @@ windows_device_from_name(WCHAR* device_name) {
     return NULL;
 }
 
-int windows_init_device(pgCameraObject *self) {
-    printf("imagine that\n");
-    return 1;
-}
-
 int windows_open_device(pgCameraObject *self) {
-    printf("made it here\n");
-
     /* setup the stuff before MFCreateSourceReaderFromMediaSource is called */
     // TODO: error check
     CoInitializeEx(0, COINIT_MULTITHREADED); //I don't want multithreading, but it seems default
@@ -131,16 +125,17 @@ int windows_open_device(pgCameraObject *self) {
     IMFMediaSource *source;
     IMFSourceReader *reader = NULL;
     IMFMediaType *media_type = NULL;
+    HRESULT hr = NULL;
 
-    self->activate->lpVtbl->ActivateObject(self->activate, &IID_IMFMediaSource, &source);
+    hr = self->activate->lpVtbl->ActivateObject(self->activate, &IID_IMFMediaSource, &source);
+    CHECKHR(hr);
     self->source = source;
 
-    MFCreateSourceReaderFromMediaSource(source, NULL, &reader);
+    hr = MFCreateSourceReaderFromMediaSource(source, NULL, &reader);
+    CHECKHR(hr);
 
     self->reader = reader;
     
-    HRESULT hr;
-
     //TODO: release the interface
     hr = MFCreateMediaType(&media_type);
     printf("RESULT CREATEMEDIA=%i\n", hr);
@@ -152,6 +147,7 @@ int windows_open_device(pgCameraObject *self) {
 
     hr = reader->lpVtbl->SetCurrentMediaType(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, NULL, media_type);
     printf("RESULT SETMEDIA=%i\n", hr);
+    //CHECKHR(hr);
 
     /* aborted attempt to find native media type */
     //reader->lpVtbl->GetCurrentMediaType(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, &media_type);
@@ -174,28 +170,15 @@ int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
     printf("I'm a frame, what? \n");
 
     hr = reader->lpVtbl->ReadSample(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, 0, &pdwStreamFlags, &pllTimestamp, &sample);
-
-    printf("sample=%p\n", sample);
-    printf("hr=%i\n", hr);
-    //printf("MF_E_INVALIDREQUEST=%i\n", MF_E_INVALIDREQUEST);
+    CHECKHR(hr);
 
     if (sample) {
         SDL_LockSurface(surf);
-        printf("made it 1\n");
 
         //use IMF 2d buffer instead?
         IMFMediaBuffer *buf = NULL;
         sample->lpVtbl->GetBufferByIndex(sample, 0, &buf);
         printf("buf=%p\n", buf);
-        printf("made it 2\n");
-
-        //DWORD buf_length;
-        //buf->lpVtbl->GetCurrentLength(buf, &buf_length);
-        //printf("made it 3\n");
-
-        //DWORD buf_count;
-        //sample->lpVtbl->GetBufferCount(sample, &buf_count);
-        //printf("buf_count=%i\n", buf_count);
 
         BYTE *buf_data;
         DWORD buf_max_length;
@@ -204,7 +187,6 @@ int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
         printf("buf_data=%p\n", buf_data);
         printf("buf_length=%i\n", buf_length);
         //printf("buf_data=\n%s\n", buf_data);
-        printf("made it 3\n");
 
         rgb24_to_rgb(buf_data, surf->pixels, buf_length / 3, surf->format);
         printf("made it 4\n");
