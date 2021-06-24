@@ -141,7 +141,7 @@ int windows_open_device(pgCameraObject *self) {
     MFCreateMediaType(&media_type);
 
     media_type->lpVtbl->SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Video);
-    media_type->lpVtbl->SetGUID(media_type, &MF_MT_SUBTYPE, &MFVideoFormat_RGB8);
+    media_type->lpVtbl->SetGUID(media_type, &MF_MT_SUBTYPE, &MFVideoFormat_RGB24);
 
     reader->lpVtbl->SetCurrentMediaType(reader, 0, NULL, media_type);
 
@@ -149,8 +149,6 @@ int windows_open_device(pgCameraObject *self) {
 }
 
 int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
-    printf("I'm a frame, what? \n");
-
     IMFSourceReader *reader = self->reader;
     IMFSample *sample = NULL;
 
@@ -159,11 +157,50 @@ int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
     LONGLONG pllTimestamp;
     DWORD pdwStreamFlags;
 
+    printf("I'm a frame, what? \n");
+
     hr = reader->lpVtbl->ReadSample(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, 0, &pdwStreamFlags, &pllTimestamp, &sample);
 
     printf("sample=%p\n", sample);
     printf("hr=%i\n", hr);
     //printf("MF_E_INVALIDREQUEST=%i\n", MF_E_INVALIDREQUEST);
+
+    if (sample) {
+        SDL_LockSurface(surf);
+        printf("made it 1\n");
+
+        //use IMF 2d buffer instead?
+        IMFMediaBuffer *buf = NULL;
+        sample->lpVtbl->GetBufferByIndex(sample, 0, &buf);
+        printf("buf=%p\n", buf);
+        printf("made it 2\n");
+
+        //DWORD buf_length;
+        //buf->lpVtbl->GetCurrentLength(buf, &buf_length);
+        //printf("made it 3\n");
+
+        //DWORD buf_count;
+        //sample->lpVtbl->GetBufferCount(sample, &buf_count);
+        //printf("buf_count=%i\n", buf_count);
+
+        BYTE *buf_data;
+        DWORD buf_max_length;
+        DWORD buf_length;
+        buf->lpVtbl->Lock(buf, &buf_data, &buf_max_length, &buf_length);
+        printf("buf_data=%p\n", buf_data);
+        printf("buf_length=%i\n", buf_length);
+        //printf("buf_data=\n%s\n", buf_data);
+        printf("made it 3\n");
+
+        rgb24_to_rgb(buf_data, surf->pixels, buf_length / 3, surf->format);
+        printf("made it 4\n");
+
+        buf->lpVtbl->Unlock(buf);
+
+        SDL_UnlockSurface(surf);
+    }
+
+
 
     return 1;
 }

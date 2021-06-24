@@ -438,8 +438,8 @@ camera_get_image(pgCameraObject *self, PyObject *arg)
     SDL_Surface *surf = NULL;
     pgSurfaceObject *surfobj = NULL;
 
-    int width = 600;
-    int height = 400;
+    int width = 1280;
+    int height = 720;
 
     if (!PyArg_ParseTuple(arg, "|O!", &pgSurface_Type, &surfobj))
         return NULL;
@@ -505,6 +505,7 @@ colorspace(SDL_Surface *src, SDL_Surface *dst, int cspace)
 void
 rgb24_to_rgb(const void *src, void *dst, int length, SDL_PixelFormat *format)
 {
+    printf("A\n");
     Uint8 *s = (Uint8 *)src;
     Uint8 *d8;
     Uint16 *d16;
@@ -512,6 +513,7 @@ rgb24_to_rgb(const void *src, void *dst, int length, SDL_PixelFormat *format)
     Uint8 r, g, b;
     int rshift, gshift, bshift, rloss, gloss, bloss;
 
+    printf("B\n");
     rshift = format->Rshift;
     gshift = format->Gshift;
     bshift = format->Bshift;
@@ -519,8 +521,10 @@ rgb24_to_rgb(const void *src, void *dst, int length, SDL_PixelFormat *format)
     gloss = format->Gloss;
     bloss = format->Bloss;
 
+    printf("C\n");
     switch (format->BytesPerPixel) {
         case 1:
+            printf("D\n");
             d8 = (Uint8 *)dst;
             while (length--) {
                 r = *s++;
@@ -531,6 +535,7 @@ rgb24_to_rgb(const void *src, void *dst, int length, SDL_PixelFormat *format)
             }
             break;
         case 2:
+            printf("E\n");
             d16 = (Uint16 *)dst;
             while (length--) {
                 r = *s++;
@@ -541,8 +546,10 @@ rgb24_to_rgb(const void *src, void *dst, int length, SDL_PixelFormat *format)
             }
             break;
         case 3:
+            printf("F\n");
             d8 = (Uint8 *)dst;
             while (length--) {
+                //printf("WOW\n");
                 *d8++ = *(s + 2); /* blue */
                 *d8++ = *(s + 1); /* green */
                 *d8++ = *s;       /* red */
