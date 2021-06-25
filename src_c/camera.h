@@ -138,10 +138,10 @@ typedef struct pgCameraObject {
     IMFSourceReader* reader;
     int width;
     int height;
-    int size;
-    int hflip;
-    int vflip;
-    int brightness;
+    //int size;
+    //int hflip;
+    //int vflip;
+    //int brightness;
 } pgCameraObject;
 
 #else

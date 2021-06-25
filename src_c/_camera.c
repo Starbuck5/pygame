@@ -337,7 +337,7 @@ camera_set_controls(pgCameraObject *self, PyObject *arg, PyObject *kwds)
 PyObject *
 camera_get_size(pgCameraObject *self, PyObject *args)
 {
-#if defined(__unix__)
+#if defined(__unix__) || defined(PYGAME_WINDOWS_CAMERA)
     return Py_BuildValue("(ii)", self->width, self->height);
 #elif defined(PYGAME_MAC_CAMERA_OLD)
     return Py_BuildValue("(ii)", self->boundsRect.right,
@@ -443,8 +443,8 @@ camera_get_image(pgCameraObject *self, PyObject *arg)
     SDL_Surface *surf = NULL;
     pgSurfaceObject *surfobj = NULL;
 
-    int width = 640;
-    int height = 360;
+    int width = self->width;
+    int height = self->height;
 
     if (!PyArg_ParseTuple(arg, "|O!", &pgSurface_Type, &surfobj))
         return NULL;
@@ -1950,8 +1950,6 @@ Camera(pgCameraObject *self, PyObject *arg)
     //needs to be freed with PyMem_Free later
     dev_name = PyUnicode_AsWideCharString(name_obj, NULL);
 
-    printf("dev_name = %ls\n", dev_name);
-
     p = windows_device_from_name(dev_name);
 
     if (!p) {
@@ -1962,6 +1960,8 @@ Camera(pgCameraObject *self, PyObject *arg)
 
     cameraobj->device_name = dev_name;
     cameraobj->activate = p;
+    cameraobj->width = w;
+    cameraobj->height = h;
 
     return (PyObject *)cameraobj;
 #endif

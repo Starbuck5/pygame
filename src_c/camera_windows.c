@@ -8,9 +8,8 @@
 #include <combaseapi.h>
 
 #define RELEASE(obj) if (obj) {obj->lpVtbl->Release(obj);}
-#define CHECKHR(hr) if FAILED(hr) {PyErr_SetString(pgExc_SDLError, "Media Foundation HRESULT failure"); return NULL;}
+#define CHECKHR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media Foundation HRESULT failure %i on line %i", hr, __LINE__); return NULL;}
 
-//__LINE__
 
 WCHAR *
 get_attr_string(IMFActivate *pActive) {
@@ -31,19 +30,12 @@ get_attr_string(IMFActivate *pActive) {
             &MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, res, cchLength + 1, &cchLength);
     }
 
-    /*
-    if (res) {
-        delete [] res;
-    }
-    */
-    //return hr;
     return (WCHAR *)res;
 }
 
 WCHAR **
 windows_list_cameras(int *num_devices) {
     WCHAR** devices = NULL;
-    IMFMediaSource *pSource = NULL;
     IMFAttributes *pAttributes = NULL;
     IMFActivate **ppDevices = NULL;
 
@@ -72,8 +64,10 @@ windows_list_cameras(int *num_devices) {
         devices[i] = get_attr_string(ppDevices[i]);
     }
 
-    // TODO: Release ppDevices?
-
+    for (int i=0; i<count; i++) {
+        RELEASE(ppDevices[i]);  
+    }
+    RELEASE(pAttributes)
     *num_devices = count;
     return devices;
 }
@@ -113,21 +107,41 @@ windows_device_from_name(WCHAR* device_name) {
         free(_device_name);
     }
 
-    // TODO: Release ppDevices?
-
+    for (int i=0; i<count; i++) {
+        RELEASE(ppDevices[i]);  
+    }
+    RELEASE(pAttributes);
     return NULL;
 }
 
-int windows_open_device(pgCameraObject *self) {
-    /* setup the stuff before MFCreateSourceReaderFromMediaSource is called */
-    // TODO: error check
-    CoInitializeEx(0, COINIT_MULTITHREADED); //I don't want multithreading, but it seems default
-    MFStartup(MF_VERSION, MFSTARTUP_LITE);
+int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, int height) {
+    HRESULT hr;
+    IMFMediaType* media_type = NULL;
 
+    hr = MFCreateMediaType(&media_type);
+    CHECKHR(hr);
+
+    hr = media_type->lpVtbl->SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Video);
+    CHECKHR(hr);
+    hr = media_type->lpVtbl->SetGUID(media_type, &MF_MT_SUBTYPE, &MFVideoFormat_RGB32);
+    CHECKHR(hr);
+
+    *mp = media_type;
+    return 1;
+}
+
+int windows_open_device(pgCameraObject *self) {
     IMFMediaSource *source;
     IMFSourceReader *reader = NULL;
     IMFMediaType *media_type = NULL;
     HRESULT hr = NULL;
+
+    /* setup the stuff before MFCreateSourceReaderFromMediaSource is called */
+    // TODO: error check
+    hr = CoInitializeEx(0, COINIT_MULTITHREADED); //I don't want multithreading, but it seems default
+    CHECKHR(hr);
+    hr = MFStartup(MF_VERSION, MFSTARTUP_LITE);
+    CHECKHR(hr);
 
     hr = self->activate->lpVtbl->ActivateObject(self->activate, &IID_IMFMediaSource, &source);
     CHECKHR(hr);
@@ -146,13 +160,9 @@ int windows_open_device(pgCameraObject *self) {
 
     self->reader = reader;
     
-    hr = MFCreateMediaType(&media_type);
-    CHECKHR(hr);
-
-    hr = media_type->lpVtbl->SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Video);
-    CHECKHR(hr);
-    hr = media_type->lpVtbl->SetGUID(media_type, &MF_MT_SUBTYPE, &MFVideoFormat_RGB32);
-    CHECKHR(hr);
+    if(!_create_media_type(&media_type, reader, self->width, self->height)) {
+        return NULL;
+    }
 
     hr = reader->lpVtbl->SetCurrentMediaType(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, NULL, media_type);
     CHECKHR(hr);
@@ -161,14 +171,15 @@ int windows_open_device(pgCameraObject *self) {
 
     hr = reader->lpVtbl->GetCurrentMediaType(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, &media_type);
     CHECKHR(hr);
-
+    
 
     // Testing out a way to get webcam sizes
     // Upper 32 bits / lower 32 bits signify width and height
     // See https://docs.microsoft.com/en-us/windows/win32/medfound/mf-mt-frame-size-attribute
     UINT64 size;
     media_type->lpVtbl->GetUINT64(media_type, &MF_MT_FRAME_SIZE, &size);
-    printf("size=%lli\n", size);
+    printf("width=%li\n", size >> 32);
+    printf("height=%li\n", size << 32 >> 32);
 
     return 1;
 }
@@ -181,15 +192,10 @@ int windows_close_device(pgCameraObject *self) {
 int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
     IMFSourceReader *reader = self->reader;
     IMFSample *sample = NULL;
-
     HRESULT hr;
-
-    LONGLONG pllTimestamp;
     DWORD pdwStreamFlags;
 
-    //printf("I'm a frame, what? \n");
-
-    hr = reader->lpVtbl->ReadSample(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, 0, &pdwStreamFlags, &pllTimestamp, &sample);
+    hr = reader->lpVtbl->ReadSample(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, 0, &pdwStreamFlags, NULL, &sample);
     CHECKHR(hr);
 
     if (sample) {
@@ -206,47 +212,15 @@ int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
         buf->lpVtbl->Lock(buf, &buf_data, &buf_max_length, &buf_length);
         //printf("buf_data=%p\n", buf_data);
         //printf("buf_length=%i\n", buf_length);
-        //printf("buf_data=\n%s\n", buf_data);
 
-        printf("first pixel = (%i, %i, %i, %i)\n", buf_data[0], buf_data[1], buf_data[2], buf_data[3]);
-
-        rgb24_to_rgb(buf_data, surf->pixels, buf_length / 4, surf->format);
-
-        //Media Foundation is giving RGBA, I think
-
-        //SDL 24 bit surfaces use BGR, hopefully
         Uint8* d8 = (Uint8 *)surf->pixels;
         Uint8* s = (Uint8 *)buf_data;
         for (int i = 0; i < buf_length / 4; i++) {
-            *d8++ = *s++;
-            *d8++ = *s++;
-            *d8++ = *s++;
-            *s++;
+            *d8++ = *s++; /* blue */
+            *d8++ = *s++; /* green */ 
+            *d8++ = *s++; /* red */
+            *s++; /* alpha and-or skipped */
         }
-
-        /*
-        Uint32 *src = (Uint32*)buf_data;
-        Uint32 *dst = (Uint32*)surf->pixels;
-        Uint8 r, g, b;
-        int rshift, gshift, bshift, rloss, gloss, bloss;
-
-        rshift = surf->format->Rshift;
-        gshift = surf->format->Gshift;
-        bshift = surf->format->Bshift;
-        rloss = surf->format->Rloss;
-        gloss = surf->format->Gloss;
-        bloss = surf->format->Bloss;
-
-        for (int i=0; i<buf_length; i++) {
-            //px = (Uint8*)buf_data[i];
-            printf("buf_data[i] = %i\n", buf_data[i]);
-            r = buf_data[i] & 0xFF;
-            g = (buf_data[i] >> 8) & 0xFF;
-            b = (buf_data[i] >> 16) & 0xFF;
-            *dst++ = ((r >> rloss) << rshift) | ((g >> gloss) << gshift) |
-                     ((b >> bloss) << bshift);
-        }
-        */
 
         buf->lpVtbl->Unlock(buf);
 
