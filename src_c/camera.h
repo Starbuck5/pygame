@@ -230,6 +230,7 @@ WCHAR** windows_list_cameras(int* num_devices);
 int windows_init_device(pgCameraObject* self);
 int windows_open_device(pgCameraObject* self);
 IMFActivate* windows_device_from_name(WCHAR* device_name);
+int windows_close_device(pgCameraObject* self);
 
 #endif
 

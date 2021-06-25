@@ -247,6 +247,9 @@ camera_stop(pgCameraObject *self, PyObject *args)
         return NULL;
     if (mac_close_device(self) == 0)
         return NULL;
+#elif defined(PYGAME_WINDOWS_CAMERA)
+    if (!windows_close_device(self))
+        return NULL;
 #endif
     Py_RETURN_NONE;
 }
@@ -440,8 +443,8 @@ camera_get_image(pgCameraObject *self, PyObject *arg)
     SDL_Surface *surf = NULL;
     pgSurfaceObject *surfobj = NULL;
 
-    int width = 1280;
-    int height = 720;
+    int width = 640;
+    int height = 360;
 
     if (!PyArg_ParseTuple(arg, "|O!", &pgSurface_Type, &surfobj))
         return NULL;
