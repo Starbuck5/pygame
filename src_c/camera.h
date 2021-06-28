@@ -64,6 +64,7 @@
     #include <mfidl.h>
     #include <mfreadwrite.h>
     #include <combaseapi.h>
+    #include <mftransform.h>
 
     #define PYGAME_WINDOWS_CAMERA 1
 #endif
@@ -136,6 +137,8 @@ typedef struct pgCameraObject {
     IMFActivate* activate;
     IMFMediaSource* source;
     IMFSourceReader* reader;
+    IMFTransform* transform;
+    IMFVideoProcessorControl* control;
     int width;
     int height;
     //int size;

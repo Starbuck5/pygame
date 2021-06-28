@@ -450,7 +450,7 @@ camera_get_image(pgCameraObject *self, PyObject *arg)
         return NULL;
 
     if (!surfobj) {
-        surf = SDL_CreateRGBSurface(0, width, height, 24, //32?
+        surf = SDL_CreateRGBSurface(0, width, height, 32, //24?
                                     0xFF << 16, 0xFF << 8, 0xFF, 0);
     }
     else {
