@@ -1,6 +1,16 @@
+/*
+ * Windows Camera - webcam support for pygame
+ * Original Author: Charlie Hayden, 2021
+ *
+ * This sub-module adds native support for windows webcams to pygame,
+ * made possible by Microsoft Media Foundation.
+ */
+
 #include "_camera.h"
 #include "pgcompat.h"
 
+// these are already included in camera.h, but having them here
+// makes all the types be recognized by VS code
 #include <mfapi.h>
 #include <mfobjects.h>
 #include <mfidl.h>
@@ -9,6 +19,8 @@
 #include <mftransform.h>
 
 #define RELEASE(obj) if (obj) {obj->lpVtbl->Release(obj);}
+
+// HRESULT failure numbers can be looked up on hresult.info to get the actual name
 #define CHECKHR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media Foundation HRESULT failure %i on line %i", hr, __LINE__); return 0;}
 
 #define FIRST_VIDEO MF_SOURCE_READER_FIRST_VIDEO_STREAM
@@ -137,6 +149,12 @@ int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, in
 
     GUID q1;
 
+    // This is interesting
+    // https://social.msdn.microsoft.com/Forums/windowsdesktop/en-US/9d6a8704-764f-46df-a41c-8e9d84f7f0f3/mjpg-encoded-media-type-is-not-available-for-usbuvc-webcameras-after-windows-10-version-1607-os
+    // Compressed video modes listed below are "backwards compatibility modes"
+    // And will always have an uncompressed counterpart (NV12 / YUY2)
+    // At least in Windows 10 since 2016
+
     for (int i=0; i < type_count; i++) {
         hr = reader->lpVtbl->GetNativeMediaType(reader, FIRST_VIDEO, i, &media_type);
 
@@ -176,6 +194,14 @@ int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, in
 
     printf("chosen width=%lli, chosen height=%lli\n", size >> 32, size << 32 >> 32);
 
+    // Can't hurt to tell the webcam to use its highest possible framerate
+    // Although I haven't seen any upside from this either
+    UINT64 fps_max_ratio;
+    hr = native_types[index]->lpVtbl->GetUINT64(native_types[index], &MF_MT_FRAME_RATE_RANGE_MAX, &fps_max_ratio);
+    CHECKHR(hr);
+    hr = native_types[index]->lpVtbl->SetUINT64(native_types[index], &MF_MT_FRAME_RATE, fps_max_ratio);
+    CHECKHR(hr);
+
     *mp = native_types[index];
     return 1;
 }
@@ -198,8 +224,6 @@ DWORD WINAPI update_function(LPVOID lpParam) {
             return 0;
         }
         CHECKHR(hr);
-
-        printf("in a loop = %i\n", self->open);
 
         if (!self->open) {
             RELEASE(sample);
@@ -230,16 +254,15 @@ DWORD WINAPI update_function(LPVOID lpParam) {
             CHECKHR(hr);
 
             self->buffer_ready = 1;
-
         }
 
         RELEASE(sample);
     }
 
-    self->open = 2;
     printf("exiting 2nd thread...\n");
     ExitThread(0);
 }
+
 
 int windows_open_device(pgCameraObject *self) {
     IMFMediaSource *source;
@@ -286,6 +309,10 @@ int windows_open_device(pgCameraObject *self) {
     hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Video);
     CHECKHR(hr);
     hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_SUBTYPE, &MFVideoFormat_RGB32);
+    CHECKHR(hr);
+
+    // make sure the output is right side up by default
+    hr = conv_type->lpVtbl->SetUINT32(conv_type, &MF_MT_DEFAULT_STRIDE, self->width * 4);
     CHECKHR(hr);
 
     hr = conv_type->lpVtbl->SetUINT64(conv_type, &MF_MT_FRAME_SIZE, size);
