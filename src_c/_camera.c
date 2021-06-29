@@ -1962,6 +1962,7 @@ Camera(pgCameraObject *self, PyObject *arg)
     cameraobj->activate = p;
     cameraobj->width = w;
     cameraobj->height = h;
+    cameraobj->open = 1;
 
     return (PyObject *)cameraobj;
 #endif

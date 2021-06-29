@@ -139,6 +139,9 @@ typedef struct pgCameraObject {
     IMFSourceReader* reader;
     IMFTransform* transform;
     IMFVideoProcessorControl* control;
+    IMFMediaBuffer* buf;
+    int open; /* used to signal the update_function to exit */
+    HANDLE t_handle;
     int width;
     int height;
     //int size;

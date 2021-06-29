@@ -11,6 +11,8 @@
 #define RELEASE(obj) if (obj) {obj->lpVtbl->Release(obj);}
 #define CHECKHR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media Foundation HRESULT failure %i on line %i", hr, __LINE__); return 0;}
 
+#define FIRST_VIDEO MF_SOURCE_READER_FIRST_VIDEO_STREAM
+
 WCHAR *
 get_attr_string(IMFActivate *pActive) {
     HRESULT hr = S_OK;
@@ -72,7 +74,6 @@ windows_list_cameras(int *num_devices) {
     return devices;
 }
 
-//wcscmp
 IMFActivate *
 windows_device_from_name(WCHAR* device_name) {
     IMFAttributes *pAttributes = NULL;
@@ -123,7 +124,7 @@ int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, in
 
     /* Find out how many native media types there are (different resolution modes, mostly) */
     while(1) {
-        hr = reader->lpVtbl->GetNativeMediaType(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, type_count, &media_type);
+        hr = reader->lpVtbl->GetNativeMediaType(reader, FIRST_VIDEO, type_count, &media_type);
         if (hr) {
             break;
         }
@@ -137,7 +138,7 @@ int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, in
     GUID q1;
 
     for (int i=0; i < type_count; i++) {
-        hr = reader->lpVtbl->GetNativeMediaType(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, i, &media_type);
+        hr = reader->lpVtbl->GetNativeMediaType(reader, FIRST_VIDEO, i, &media_type);
 
         media_type->lpVtbl->GetUINT64(media_type, &MF_MT_FRAME_SIZE, &size);
         printf("width=%lli, height=%lli\n", size >> 32, size << 32 >> 32);
@@ -165,43 +166,77 @@ int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, in
         }
     }
 
+    // TODO: deal with the situations that come up when you uncomment the line below
+    //index = 3;
+
     printf("chosen index # =%i\n", index);
-
-    hr = MFCreateMediaType(&media_type);
-    CHECKHR(hr);
-
-    hr = media_type->lpVtbl->SetGUID(media_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Video);
-    CHECKHR(hr);
-    hr = media_type->lpVtbl->SetGUID(media_type, &MF_MT_SUBTYPE, &MFVideoFormat_RGB32);
-    CHECKHR(hr);
-
 
     hr = native_types[index]->lpVtbl->GetUINT64(native_types[index], &MF_MT_FRAME_SIZE, &size);
     CHECKHR(hr);
 
-    //aslfjs
-    //hr = native_types[index]->lpVtbl->SetGUID(native_types[index], &MF_MT_SUBTYPE, &MFVideoFormat_RGB32);
-    //CHECKHR(hr);
-    //*mp = native_types[index];
-    //return 1;
-
-    //RELEASE(native_types[index]);
-
-    printf("size=%lli\n", size);
-    printf("width=%lli, height=%lli\n", size >> 32, size << 32 >> 32);
-
-    //hr = media_type->lpVtbl->SetUINT64(media_type, &MF_MT_FRAME_SIZE, size);
-    //CHECKHR(hr);
-
-    //hr = media_type->lpVtbl->SetUINT32(media_type, &MF_MT_DEFAULT_STRIDE, (size >> 32) * 4);
-    //CHECKHR(hr);
-    //hr = media_type->lpVtbl->SetUINT32(media_type, &MF_MT_SAMPLE_SIZE, (size >> 32) * (size << 32 >> 32) * 4);
-    //CHECKHR(hr);
-
-    //*mp = media_type;
+    printf("chosen width=%lli, chosen height=%lli\n", size >> 32, size << 32 >> 32);
 
     *mp = native_types[index];
     return 1;
+}
+
+DWORD WINAPI update_function(LPVOID lpParam) {
+    pgCameraObject* self = (pgCameraObject*) lpParam;
+
+    IMFSample *sample;
+    HRESULT hr;
+    DWORD pdwStreamFlags;
+
+    IMFSourceReader* reader = self->reader;
+    
+    while(1) {
+        sample = NULL;
+
+        hr = reader->lpVtbl->ReadSample(reader, FIRST_VIDEO, 0, 0, &pdwStreamFlags, NULL, &sample);
+        if (hr == -1072875772) { //MF_E_HW_MFT_FAILED_START_STREAMING
+            PyErr_SetString(PyExc_SystemError, "Camera already in use");
+            return 0;
+        }
+        CHECKHR(hr);
+
+        printf("in a loop = %i\n", self->open);
+
+        if (!self->open) {
+            RELEASE(sample);
+            break;
+        }
+
+        if (sample) {
+            hr = self->transform->lpVtbl->ProcessInput(self->transform, 0, sample, 0);
+            CHECKHR(hr);
+
+            MFT_OUTPUT_DATA_BUFFER mft_buffer[1];
+            MFT_OUTPUT_DATA_BUFFER x;
+
+            IMFSample* ns;
+            hr = MFCreateSample(&ns);
+            CHECKHR(hr);
+
+            CHECKHR(ns->lpVtbl->AddBuffer(ns, self->buf));
+
+            x.pSample = ns;
+            x.dwStreamID = 0;
+            x.dwStatus = 0;
+            x.pEvents = NULL;
+            mft_buffer[0] = x;
+
+            DWORD out;
+            hr = self->transform->lpVtbl->ProcessOutput(self->transform, 0, 1, mft_buffer, &out);
+            CHECKHR(hr);
+
+        }
+
+        RELEASE(sample);
+    }
+
+    self->open = 2;
+    printf("exiting 2nd thread...\n");
+    ExitThread(0);
 }
 
 int windows_open_device(pgCameraObject *self) {
@@ -249,8 +284,6 @@ int windows_open_device(pgCameraObject *self) {
     self->width = size >> 32;
     self->height = size << 32 >> 32;
 
-
-
     IMFMediaType* conv_type;
     CHECKHR(MFCreateMediaType(&conv_type));
     hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Video);
@@ -261,12 +294,12 @@ int windows_open_device(pgCameraObject *self) {
     hr = conv_type->lpVtbl->SetUINT64(conv_type, &MF_MT_FRAME_SIZE, size);
     CHECKHR(hr);
 
-    hr = reader->lpVtbl->SetCurrentMediaType(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, NULL, media_type);
+    hr = reader->lpVtbl->SetCurrentMediaType(reader, FIRST_VIDEO, NULL, media_type);
     CHECKHR(hr);
 
     //RELEASE(media_type);
 
-    //hr = reader->lpVtbl->GetCurrentMediaType(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, &media_type);
+    //hr = reader->lpVtbl->GetCurrentMediaType(reader, FIRST_VIDEO, &media_type);
     //CHECKHR(hr);
     
     // Testing out a way to get webcam sizes
@@ -281,13 +314,13 @@ int windows_open_device(pgCameraObject *self) {
     
     IMFVideoProcessorControl* control;
     IMFTransform* transform;
-    hr = CoCreateInstance(&CLSID_VideoProcessorMFT, NULL, CLSCTX_INPROC_SERVER, &IID_IMFVideoProcessorControl, &control);
-    CHECKHR(hr);
+    //hr = CoCreateInstance(&CLSID_VideoProcessorMFT, NULL, CLSCTX_INPROC_SERVER, &IID_IMFVideoProcessorControl, &control);
+    //CHECKHR(hr);
 
     hr = CoCreateInstance(&CLSID_VideoProcessorMFT, NULL, CLSCTX_INPROC_SERVER, &IID_IMFTransform, &transform);
     CHECKHR(hr);
 
-    hr = control->lpVtbl->SetMirror(control, MIRROR_VERTICAL | MIRROR_HORIZONTAL);
+    hr = transform->lpVtbl->QueryInterface(transform, &IID_IMFVideoProcessorControl, &control);
     CHECKHR(hr);
 
     self->control = control;
@@ -299,89 +332,48 @@ int windows_open_device(pgCameraObject *self) {
     hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type, 0);
     CHECKHR(hr);
 
+    //hr = control->lpVtbl->SetMirror(control, MIRROR_VERTICAL | MIRROR_HORIZONTAL);
+    //CHECKHR(hr);
+
+    MFT_OUTPUT_STREAM_INFO info;
+    hr = self->transform->lpVtbl->GetOutputStreamInfo(self->transform, 0, &info);
+    CHECKHR(hr);
+    //printf("OUTPUT BYTES SIZE=%i\n", info.cbSize);
+
+    CHECKHR(MFCreateMemoryBuffer(info.cbSize, &self->buf));
+
+    HANDLE update_thread = CreateThread(NULL, 0, update_function, self, 0, NULL);
+
+    self->t_handle = update_thread;
+
     return 1;
 }
 
 int windows_close_device(pgCameraObject *self) {
+    self->open = 0;
+    WaitForSingleObject(self->t_handle, 3000);
+
     RELEASE(self->reader);
+    CHECKHR(MFShutdown());
     return 1;
 }
 
 int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
-    IMFSourceReader *reader = self->reader;
-    IMFSample *sample = NULL;
-    HRESULT hr;
-    DWORD pdwStreamFlags;
-
-    //clock_t c = clock();
-    hr = reader->lpVtbl->ReadSample(reader, MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, 0, &pdwStreamFlags, NULL, &sample);
-    //c -= clock();
-    //printf("time elapsed = %f\n", c / (double)CLOCKS_PER_SEC);
-
-    if (hr == -1072875772) { //MF_E_HW_MFT_FAILED_START_STREAMING
-        PyErr_SetString(PyExc_SystemError, "Camera already in use");
-        return 0;
-    }
-
-    CHECKHR(hr);
-
-    if (sample) {
-        SDL_LockSurface(surf);
-
-        //MFT_INPUT_STREAM_INFO ininfo;
-        //hr = self->transform->lpVtbl->GetInputStreamInfo(self->transform, 0, &ininfo);
-        //CHECKHR(hr);
-        //printf("INPUT BYTES SIZE=%i\n", ininfo.cbSize);        
-
-        hr = self->transform->lpVtbl->ProcessInput(self->transform, 0, sample, 0);
-        CHECKHR(hr);
-
-        MFT_OUTPUT_DATA_BUFFER mft_buffer[1];
-
-        MFT_OUTPUT_DATA_BUFFER x;
-
-        MFT_OUTPUT_STREAM_INFO info;
-        hr = self->transform->lpVtbl->GetOutputStreamInfo(self->transform, 0, &info);
-        CHECKHR(hr);
-        //printf("OUTPUT BYTES SIZE=%i\n", info.cbSize);
-
-        IMFSample* ns;
-        hr = MFCreateSample(&ns);
-        CHECKHR(hr);
-
-        IMFMediaBuffer* bs;
-        CHECKHR(MFCreateMemoryBuffer(info.cbSize, &bs));
-        CHECKHR(ns->lpVtbl->AddBuffer(ns, bs));
-
-        //IMF2DBuffer* b2;
-        //bs->lpVtbl->QueryInterface(bs, &IID_IMF2DBuffer, &b2);
-        //CHECKHR(ns->lpVtbl->AddBuffer(ns, b2));
-
-        x.pSample = ns;
-        x.dwStreamID = 0;
-        x.dwStatus = 0;
-        x.pEvents = NULL;
-        mft_buffer[0] = x;
-
-        DWORD out;
-        hr = self->transform->lpVtbl->ProcessOutput(self->transform, 0, 1, mft_buffer, &out);
-        CHECKHR(hr);
-
+    if (self->buf) {
         BYTE *buf_data;
         DWORD buf_max_length;
         DWORD buf_length;
-        bs->lpVtbl->Lock(bs, &buf_data, &buf_max_length, &buf_length);
+        self->buf->lpVtbl->Lock(self->buf, &buf_data, &buf_max_length, &buf_length);
+
+        SDL_LockSurface(surf);
 
         // optimized for 32 bit output surfaces
         // this won't be possible always, TODO implement switching logic
         memcpy(surf->pixels, buf_data, buf_length);
 
-        bs->lpVtbl->Unlock(bs);
-
-        RELEASE(bs);
-        RELEASE(sample);
-
         SDL_UnlockSurface(surf);
+
+        self->buf->lpVtbl->Unlock(self->buf);
     }
 
     return 1;
