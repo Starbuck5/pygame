@@ -229,6 +229,8 @@ DWORD WINAPI update_function(LPVOID lpParam) {
             hr = self->transform->lpVtbl->ProcessOutput(self->transform, 0, 1, mft_buffer, &out);
             CHECKHR(hr);
 
+            self->buffer_ready = 1;
+
         }
 
         RELEASE(sample);
@@ -246,15 +248,10 @@ int windows_open_device(pgCameraObject *self) {
     HRESULT hr;
 
     /* setup the stuff before MFCreateSourceReaderFromMediaSource is called */
-    hr = CoInitializeEx(0, COINIT_MULTITHREADED); //I don't want multithreading, but it seems default
+    hr = CoInitializeEx(0, COINIT_MULTITHREADED);
     CHECKHR(hr);
     hr = MFStartup(MF_VERSION, MFSTARTUP_LITE);
     CHECKHR(hr);
-
-    // Another attempt to open webcam in another resolution
-    //UINT64 s = 5497558139600;
-    //hr = self->activate->lpVtbl->SetUINT64(self->activate, &MF_MT_FRAME_SIZE, s);
-    //CHECKHR(hr);
 
     hr = self->activate->lpVtbl->ActivateObject(self->activate, &IID_IMFMediaSource, &source);
     CHECKHR(hr);
@@ -296,26 +293,9 @@ int windows_open_device(pgCameraObject *self) {
 
     hr = reader->lpVtbl->SetCurrentMediaType(reader, FIRST_VIDEO, NULL, media_type);
     CHECKHR(hr);
-
-    //RELEASE(media_type);
-
-    //hr = reader->lpVtbl->GetCurrentMediaType(reader, FIRST_VIDEO, &media_type);
-    //CHECKHR(hr);
-    
-    // Testing out a way to get webcam sizes
-    // Upper 32 bits / lower 32 bits signify width and height
-    // See https://docs.microsoft.com/en-us/windows/win32/medfound/mf-mt-frame-size-attribute
-    /*
-    UINT64 size;
-    media_type->lpVtbl->GetUINT64(media_type, &MF_MT_FRAME_SIZE, &size);
-    printf("width=%li\n", size >> 32);
-    printf("height=%li\n", size << 32 >> 32);
-    */
     
     IMFVideoProcessorControl* control;
     IMFTransform* transform;
-    //hr = CoCreateInstance(&CLSID_VideoProcessorMFT, NULL, CLSCTX_INPROC_SERVER, &IID_IMFVideoProcessorControl, &control);
-    //CHECKHR(hr);
 
     hr = CoCreateInstance(&CLSID_VideoProcessorMFT, NULL, CLSCTX_INPROC_SERVER, &IID_IMFTransform, &transform);
     CHECKHR(hr);
@@ -374,7 +354,13 @@ int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
         SDL_UnlockSurface(surf);
 
         self->buf->lpVtbl->Unlock(self->buf);
+
+        self->buffer_ready = 0;
     }
 
     return 1;
+}
+
+int windows_frame_ready(pgCameraObject *self) {
+    return self->buffer_ready;
 }
