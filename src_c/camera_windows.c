@@ -25,6 +25,46 @@
 
 #define FIRST_VIDEO MF_SOURCE_READER_FIRST_VIDEO_STREAM
 
+// drawn from:
+//https://docs.microsoft.com/en-us/windows/win32/medfound/video-subtype-guids
+#define NUMRGB 8
+static GUID* rgb_types[NUMRGB] = {&MFVideoFormat_RGB8, &MFVideoFormat_RGB555,
+                                  &MFVideoFormat_RGB565, &MFVideoFormat_RGB24,
+                                  &MFVideoFormat_RGB32, &MFVideoFormat_ARGB32,
+                                  &MFVideoFormat_A2R10G10B10,
+                                  &MFVideoFormat_A16B16G16R16F};
+
+#define NUMYUV 25
+static GUID* yuv_types[NUMYUV] = {&MFVideoFormat_AI44, &MFVideoFormat_AYUV,
+                                  &MFVideoFormat_I420, &MFVideoFormat_IYUV,
+                                  &MFVideoFormat_NV11, &MFVideoFormat_NV12,
+                                  &MFVideoFormat_UYVY, &MFVideoFormat_Y41P,
+                                  &MFVideoFormat_Y41T, &MFVideoFormat_Y42T,
+                                  &MFVideoFormat_YUY2, &MFVideoFormat_YVU9,
+                                  &MFVideoFormat_YV12, &MFVideoFormat_YVYU,
+                                  &MFVideoFormat_P010, &MFVideoFormat_P016,
+                                  &MFVideoFormat_P210, &MFVideoFormat_P216,
+                                  &MFVideoFormat_v210, &MFVideoFormat_v216,
+                                  &MFVideoFormat_v410, &MFVideoFormat_Y210,
+                                  &MFVideoFormat_Y216, &MFVideoFormat_Y410,
+                                  &MFVideoFormat_Y416};
+
+int _format_is_rgb(GUID format) {
+    for (int i=0; i<NUMRGB; i++) {
+        if (format.Data1 == rgb_types[i]->Data1)
+            return 1;
+    }
+    return 0;
+}
+
+int _format_is_yuv(GUID format) {
+    for (int i=0; i<NUMYUV; i++) {
+        if (format.Data1 == yuv_types[i]->Data1)
+            return 1;
+    }
+    return 0;
+}
+
 WCHAR *
 get_attr_string(IMFActivate *pActive) {
     HRESULT hr = S_OK;
@@ -147,7 +187,7 @@ int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, in
     IMFMediaType** native_types = malloc(sizeof(IMFMediaType*) * type_count);
     int* diagonal_distances = malloc(sizeof(int) * type_count);
 
-    GUID q1;
+    GUID subtype;
 
     // This is interesting
     // https://social.msdn.microsoft.com/Forums/windowsdesktop/en-US/9d6a8704-764f-46df-a41c-8e9d84f7f0f3/mjpg-encoded-media-type-is-not-available-for-usbuvc-webcameras-after-windows-10-version-1607-os
@@ -157,18 +197,25 @@ int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, in
 
     for (int i=0; i < type_count; i++) {
         hr = reader->lpVtbl->GetNativeMediaType(reader, FIRST_VIDEO, i, &media_type);
+        CHECKHR(hr);
 
-        media_type->lpVtbl->GetUINT64(media_type, &MF_MT_FRAME_SIZE, &size);
-        printf("width=%lli, height=%lli\n", size >> 32, size << 32 >> 32);
+        hr = media_type->lpVtbl->GetGUID(media_type, &MF_MT_SUBTYPE, &subtype);
+        CHECKHR(hr);
 
-        media_type->lpVtbl->GetGUID(media_type, &MF_MT_SUBTYPE, &q1);
-        printf("subtype=%li\n", q1.Data1);
+        if (_format_is_rgb(subtype) || _format_is_yuv(subtype)) {
+            hr = media_type->lpVtbl->GetUINT64(media_type, &MF_MT_FRAME_SIZE, &size);
+            CHECKHR(hr);
+    
+            t_width = size >> 32;
+            t_height = size << 32 >> 32;
 
-        t_width = size >> 32;
-        t_height = size << 32 >> 32;
-
-        native_types[i] = media_type;
-        diagonal_distances[i] = (int)pow(t_width, 2) + (int)pow(t_height, 2);
+            native_types[i] = media_type;
+            diagonal_distances[i] = (int)pow(t_width, 2) + (int)pow(t_height, 2);
+        }
+        else {
+            native_types[i] = NULL;
+            diagonal_distances[i] = 0;
+        }
     }
 
     int difference = 100000000;
@@ -178,14 +225,13 @@ int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, in
     for (int i=0; i < type_count; i++) {
         current_difference = diagonal_distances[i] - ((int)pow(width, 2) + (int)pow(height, 2));
         current_difference = abs(current_difference);
-        if (current_difference < difference) {
+        if (current_difference < difference && native_types[index]) {
             index = i;
             difference = current_difference;
         }
     }
 
-    // TODO: deal with the situations that come up when you uncomment the line below
-    //index = 3;
+    //TODO: what happens if it doesn't select anything?
 
     printf("chosen index # =%i\n", index);
 
@@ -222,6 +268,7 @@ DWORD WINAPI update_function(LPVOID lpParam) {
         if (hr == -1072875772) { //MF_E_HW_MFT_FAILED_START_STREAMING
             PyErr_SetString(PyExc_SystemError, "Camera already in use");
             return 0;
+            //TODO: how are errors from this thread going to work?
         }
         CHECKHR(hr);
 
