@@ -4,13 +4,16 @@
  *
  * This sub-module adds native support for windows webcams to pygame,
  * made possible by Microsoft Media Foundation.
+ * 
+ * Since Media Foundation is still maturing, support is best in Windows 10 or
+ * above, but I believe this will work in Windows 8 as well.
  */
 
 #include "_camera.h"
 #include "pgcompat.h"
 
-// these are already included in camera.h, but having them here
-// makes all the types be recognized by VS code
+/*these are already included in camera.h, but having them here
+ * makes all the types be recognized by VS code */
 #include <mfapi.h>
 #include <mfobjects.h>
 #include <mfidl.h>
@@ -20,63 +23,48 @@
 
 #define RELEASE(obj) if (obj) {obj->lpVtbl->Release(obj);}
 
-// HRESULT failure numbers can be looked up on hresult.info to get the actual name
+/* HRESULT failure numbers can be looked up on 
+ * hresult.info to get the actual name */
 #define CHECKHR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media Foundation HRESULT failure %i on line %i", hr, __LINE__); return 0;}
 
 #define CALL(obj, method, ...) obj->lpVtbl->method(obj, __VA_ARGS__)
 
 #define FIRST_VIDEO MF_SOURCE_READER_FIRST_VIDEO_STREAM
+#define DEVSOURCE_VIDCAP_GUID MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID
 
 
 //TODO: make camera able to be restarted in place, started and restarted, etc.
 //TODO: check if started for get_image(), other functions?
 //TODO: implement get_raw()
+//TOOD: improved memory management everywhere
 
-//TODO: narrow down compatibility to input types on this page:
-//https://docs.microsoft.com/en-us/windows/win32/medfound/video-processor-mft
+/* These are the only supported input types
+ * (TODO?) broaden in the future by enumerating MFTs to find decoders?
+ * drawn from:
+ * https://docs.microsoft.com/en-us/windows/win32/medfound/video-processor-mft */
+#define NUM_FORM 20
+const GUID* inp_types[NUM_FORM] = {&MFVideoFormat_ARGB32, &MFVideoFormat_AYUV,
+                                   &MFVideoFormat_I420, &MFVideoFormat_IYUV,
+                                   &MFVideoFormat_NV11, &MFVideoFormat_NV12,
+                                   &MFVideoFormat_RGB24, &MFVideoFormat_RGB32,
+                                   &MFVideoFormat_RGB555, &MFVideoFormat_RGB8,
+                                   &MFVideoFormat_RGB565, &MFVideoFormat_UYVY,
+                                   &MFVideoFormat_v410, &MFVideoFormat_Y216,
+                                   &MFVideoFormat_Y41P, &MFVideoFormat_Y41T,
+                                   &MFVideoFormat_Y42T, &MFVideoFormat_YUY2,
+                                   &MFVideoFormat_YV12, &MFVideoFormat_YVYU};
 
-// drawn from:
-//https://docs.microsoft.com/en-us/windows/win32/medfound/video-subtype-guids
-#define NUMRGB 8
-const GUID* rgb_types[NUMRGB] = {&MFVideoFormat_RGB8, &MFVideoFormat_RGB555,
-                                  &MFVideoFormat_RGB565, &MFVideoFormat_RGB24,
-                                  &MFVideoFormat_RGB32, &MFVideoFormat_ARGB32,
-                                  &MFVideoFormat_A2R10G10B10,
-                                  &MFVideoFormat_A16B16G16R16F};
-
-#define NUMYUV 25
-const GUID* yuv_types[NUMYUV] = {&MFVideoFormat_AI44, &MFVideoFormat_AYUV,
-                                  &MFVideoFormat_I420, &MFVideoFormat_IYUV,
-                                  &MFVideoFormat_NV11, &MFVideoFormat_NV12,
-                                  &MFVideoFormat_UYVY, &MFVideoFormat_Y41P,
-                                  &MFVideoFormat_Y41T, &MFVideoFormat_Y42T,
-                                  &MFVideoFormat_YUY2, &MFVideoFormat_YVU9,
-                                  &MFVideoFormat_YV12, &MFVideoFormat_YVYU,
-                                  &MFVideoFormat_P010, &MFVideoFormat_P016,
-                                  &MFVideoFormat_P210, &MFVideoFormat_P216,
-                                  &MFVideoFormat_v210, &MFVideoFormat_v216,
-                                  &MFVideoFormat_v410, &MFVideoFormat_Y210,
-                                  &MFVideoFormat_Y216, &MFVideoFormat_Y410,
-                                  &MFVideoFormat_Y416};
-
-int _format_is_rgb(GUID format) {
-    for (int i=0; i<NUMRGB; i++) {
-        if (format.Data1 == rgb_types[i]->Data1)
+int _is_supported_input_format(GUID format) {
+    for (int i=0; i<NUM_FORM; i++) {
+        if (format.Data1 == inp_types[i]->Data1)
             return 1;
     }
-    return 0;
-}
-
-int _format_is_yuv(GUID format) {
-    for (int i=0; i<NUMYUV; i++) {
-        if (format.Data1 == yuv_types[i]->Data1)
-            return 1;
-    }
-    return 0;
+    return 0;   
 }
 
 WCHAR *
-get_attr_string(IMFActivate *pActive) {
+get_attr_string(IMFActivate *pActive) 
+{
     HRESULT hr = S_OK;
     UINT32 cchLength = 0;
     WCHAR *res = NULL;
@@ -104,7 +92,8 @@ get_attr_string(IMFActivate *pActive) {
 }
 
 WCHAR **
-windows_list_cameras(int *num_devices) {
+windows_list_cameras(int *num_devices) 
+{
     WCHAR** devices = NULL;
     IMFAttributes *pAttributes = NULL;
     IMFActivate **ppDevices = NULL;
@@ -114,8 +103,9 @@ windows_list_cameras(int *num_devices) {
         printf("oof\n");
     }
 
-    hr = pAttributes->lpVtbl->SetGUID(pAttributes, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, 
-                              &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
+    hr = pAttributes->lpVtbl->SetGUID(pAttributes, 
+                                      &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
+                                      &DEVSOURCE_VIDCAP_GUID);
 
     if (FAILED(hr)) {
         printf("oof2\n");
@@ -143,7 +133,8 @@ windows_list_cameras(int *num_devices) {
 }
 
 IMFActivate *
-windows_device_from_name(WCHAR* device_name) {
+windows_device_from_name(WCHAR* device_name) 
+{
     IMFAttributes *pAttributes = NULL;
     IMFActivate **ppDevices = NULL;
     WCHAR* _device_name = NULL;
@@ -153,8 +144,9 @@ windows_device_from_name(WCHAR* device_name) {
         printf("oof\n");
     }
 
-    hr = pAttributes->lpVtbl->SetGUID(pAttributes, &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, 
-                              &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
+    hr = pAttributes->lpVtbl->SetGUID(pAttributes, 
+                                      &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, 
+                                      &DEVSOURCE_VIDCAP_GUID);
 
     if (FAILED(hr)) {
         printf("oof2\n");
@@ -183,7 +175,10 @@ windows_device_from_name(WCHAR* device_name) {
     return NULL;
 }
 
-int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, int height) {
+int
+_create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width,
+                   int height)
+{
     HRESULT hr;
     IMFMediaType* media_type = NULL;
     UINT64 size;
@@ -192,7 +187,8 @@ int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, in
 
     /* Find out how many native media types there are (different resolution modes, mostly) */
     while(1) {
-        hr = reader->lpVtbl->GetNativeMediaType(reader, FIRST_VIDEO, type_count, &media_type);
+        hr = reader->lpVtbl->GetNativeMediaType(reader, FIRST_VIDEO,
+                                                type_count, &media_type);
         if (hr) {
             break;
         }
@@ -205,20 +201,22 @@ int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, in
 
     GUID subtype;
 
-    // This is interesting
-    // https://social.msdn.microsoft.com/Forums/windowsdesktop/en-US/9d6a8704-764f-46df-a41c-8e9d84f7f0f3/mjpg-encoded-media-type-is-not-available-for-usbuvc-webcameras-after-windows-10-version-1607-os
-    // Compressed video modes listed below are "backwards compatibility modes"
-    // And will always have an uncompressed counterpart (NV12 / YUY2)
-    // At least in Windows 10 since 2016
+    /* This is interesting
+     * https://social.msdn.microsoft.com/Forums/windowsdesktop/en-US/9d6a8704-764f-46df-a41c-8e9d84f7f0f3/mjpg-encoded-media-type-is-not-available-for-usbuvc-webcameras-after-windows-10-version-1607-os
+     * Compressed video modes listed below are "backwards compatibility modes"
+     * And will always have an uncompressed counterpart (NV12 / YUY2)
+     * At least in Windows 10 since 2016 */
 
     for (int i=0; i < type_count; i++) {
-        hr = reader->lpVtbl->GetNativeMediaType(reader, FIRST_VIDEO, i, &media_type);
+        hr = reader->lpVtbl->GetNativeMediaType(reader, FIRST_VIDEO, i, 
+                                                &media_type);
         CHECKHR(hr);
 
-        hr = media_type->lpVtbl->GetGUID(media_type, &MF_MT_SUBTYPE, &subtype);
+        hr = media_type->lpVtbl->GetGUID(media_type, &MF_MT_SUBTYPE,
+                                         &subtype);
         CHECKHR(hr);
 
-        if (_format_is_rgb(subtype) || _format_is_yuv(subtype)) {
+        if (_is_supported_input_format(subtype)) {
             hr = media_type->lpVtbl->GetUINT64(media_type, &MF_MT_FRAME_SIZE, &size);
             CHECKHR(hr);
     
@@ -251,24 +249,31 @@ int _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width, in
 
     printf("chosen index # =%i\n", index);
 
-    hr = native_types[index]->lpVtbl->GetUINT64(native_types[index], &MF_MT_FRAME_SIZE, &size);
+    hr = native_types[index]->lpVtbl->GetUINT64(native_types[index],
+                                                &MF_MT_FRAME_SIZE, &size);
     CHECKHR(hr);
 
     printf("chosen width=%lli, chosen height=%lli\n", size >> 32, size << 32 >> 32);
 
-    // Can't hurt to tell the webcam to use its highest possible framerate
-    // Although I haven't seen any upside from this either
+    /* Can't hurt to tell the webcam to use its highest possible framerate
+     * Although I haven't seen any upside from this either */
     UINT64 fps_max_ratio;
-    hr = native_types[index]->lpVtbl->GetUINT64(native_types[index], &MF_MT_FRAME_RATE_RANGE_MAX, &fps_max_ratio);
+    hr = native_types[index]->lpVtbl->GetUINT64(native_types[index],
+                                                &MF_MT_FRAME_RATE_RANGE_MAX,
+                                                &fps_max_ratio);
     CHECKHR(hr);
-    hr = native_types[index]->lpVtbl->SetUINT64(native_types[index], &MF_MT_FRAME_RATE, fps_max_ratio);
+    hr = native_types[index]->lpVtbl->SetUINT64(native_types[index],
+                                                &MF_MT_FRAME_RATE,
+                                                fps_max_ratio);
     CHECKHR(hr);
 
     *mp = native_types[index];
     return 1;
 }
 
-DWORD WINAPI update_function(LPVOID lpParam) {
+DWORD WINAPI 
+update_function(LPVOID lpParam)
+{
     pgCameraObject* self = (pgCameraObject*) lpParam;
 
     IMFSample *sample;
@@ -303,14 +308,26 @@ DWORD WINAPI update_function(LPVOID lpParam) {
         }
 
         if (self->vflip != self->last_vflip) {
-            self->transform->lpVtbl->GetOutputCurrentType(self->transform, 0, &output_type);
-            output_type->lpVtbl->GetUINT32(output_type, &MF_MT_DEFAULT_STRIDE, &stride);
-            output_type->lpVtbl->SetUINT32(output_type, &MF_MT_DEFAULT_STRIDE, -stride);
-            self->transform->lpVtbl->SetOutputType(self->transform, 0, output_type, 0);
+            hr = self->transform->lpVtbl->GetOutputCurrentType(self->transform, 
+                                                               0, 
+                                                               &output_type);
+            CHECKHR(hr);
+            hr = output_type->lpVtbl->GetUINT32(output_type,
+                                                &MF_MT_DEFAULT_STRIDE,
+                                                &stride);
+            CHECKHR(hr);
+            hr = output_type->lpVtbl->SetUINT32(output_type, 
+                                                &MF_MT_DEFAULT_STRIDE,
+                                                -stride);
+            CHECKHR(hr);
+            hr = self->transform->lpVtbl->SetOutputType(self->transform, 
+                                                        0, output_type, 0);
+            CHECKHR(hr);
             self->last_vflip = self->vflip;
         }
 
-        hr = reader->lpVtbl->ReadSample(reader, FIRST_VIDEO, 0, 0, &pdwStreamFlags, NULL, &sample);
+        hr = reader->lpVtbl->ReadSample(reader, FIRST_VIDEO, 0, 0,
+                                        &pdwStreamFlags, NULL, &sample);
         if (hr == -1072875772) { //MF_E_HW_MFT_FAILED_START_STREAMING
             PyErr_SetString(PyExc_SystemError, "Camera already in use");
             return 0;
@@ -324,7 +341,8 @@ DWORD WINAPI update_function(LPVOID lpParam) {
         }
 
         if (sample) {
-            hr = self->transform->lpVtbl->ProcessInput(self->transform, 0, sample, 0);
+            hr = self->transform->lpVtbl->ProcessInput(self->transform, 0,
+                                                       sample, 0);
             CHECKHR(hr);
 
             MFT_OUTPUT_DATA_BUFFER mft_buffer[1];
@@ -343,7 +361,8 @@ DWORD WINAPI update_function(LPVOID lpParam) {
             mft_buffer[0] = x;
 
             DWORD out;
-            hr = self->transform->lpVtbl->ProcessOutput(self->transform, 0, 1, mft_buffer, &out);
+            hr = self->transform->lpVtbl->ProcessOutput(self->transform, 0, 1,
+                                                        mft_buffer, &out);
             CHECKHR(hr);
 
             self->buffer_ready = 1;
@@ -356,8 +375,9 @@ DWORD WINAPI update_function(LPVOID lpParam) {
     ExitThread(0);
 }
 
-
-int windows_open_device(pgCameraObject *self) {
+int
+windows_open_device(pgCameraObject *self)
+{
     IMFMediaSource *source;
     IMFSourceReader *reader = NULL;
     IMFMediaType *media_type = NULL;
@@ -378,15 +398,22 @@ int windows_open_device(pgCameraObject *self) {
     CHECKHR(hr);
     self->source = source;
 
-    // Set the source reader to use video processing
-    // This allows it to convert any media stream type to RGB32
-    // It is not recommended for realtime use, but it seems to work alright
+    /* The commented out code below sets the source reader to use video
+     * processing, which guarantees it can output RGB32 from any format.
+     * Sadly, using the source reader in this way would only let me open
+     * the webcam in a single size, so I replaced it with a video processor
+     * MFT. (Which also helps with the flip controls). */
+    /*
     IMFAttributes *rsa;
     MFCreateAttributes(&rsa, 1);
     rsa->lpVtbl->SetUINT32(rsa, &MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, 1);
 
     hr = MFCreateSourceReaderFromMediaSource(source, rsa, &reader);
     RELEASE(rsa);
+    CHECKHR(hr);
+    */
+
+    hr = MFCreateSourceReaderFromMediaSource(source, NULL, &reader);
     CHECKHR(hr);
 
     self->reader = reader;
@@ -450,7 +477,9 @@ int windows_open_device(pgCameraObject *self) {
     return 1;
 }
 
-int windows_close_device(pgCameraObject *self) {
+int
+windows_close_device(pgCameraObject *self)
+{
     self->open = 0;
     WaitForSingleObject(self->t_handle, 3000);
 
@@ -461,17 +490,20 @@ int windows_close_device(pgCameraObject *self) {
     return 1;
 }
 
-int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
+int
+windows_read_frame(pgCameraObject *self, SDL_Surface *surf)
+{
     if (self->buf) {
         BYTE *buf_data;
         DWORD buf_max_length;
         DWORD buf_length;
-        self->buf->lpVtbl->Lock(self->buf, &buf_data, &buf_max_length, &buf_length);
+        self->buf->lpVtbl->Lock(self->buf, &buf_data, &buf_max_length, 
+                                &buf_length);
 
         SDL_LockSurface(surf);
 
-        // optimized for 32 bit output surfaces
-        // this won't be possible always, TODO implement switching logic
+        /* optimized for 32 bit output surfaces
+         * this won't be possible always, TODO implement switching logic */
         memcpy(surf->pixels, buf_data, buf_length);
 
         SDL_UnlockSurface(surf);
@@ -484,6 +516,8 @@ int windows_read_frame(pgCameraObject *self, SDL_Surface *surf) {
     return 1;
 }
 
-int windows_frame_ready(pgCameraObject *self) {
+int
+windows_frame_ready(pgCameraObject *self)
+{
     return self->buffer_ready;
 }
