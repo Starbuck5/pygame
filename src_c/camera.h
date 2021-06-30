@@ -145,10 +145,9 @@ typedef struct pgCameraObject {
     HANDLE t_handle;
     int width;
     int height;
-    //int size;
-    //int hflip;
-    //int vflip;
-    //int brightness;
+    int hflip;
+    int vflip;
+    int last_vflip;
 } pgCameraObject;
 
 #else
@@ -238,7 +237,7 @@ int windows_init_device(pgCameraObject* self);
 int windows_open_device(pgCameraObject* self);
 IMFActivate* windows_device_from_name(WCHAR* device_name);
 int windows_close_device(pgCameraObject* self);
-int windows_read_frame(pgCameraObject* self);
+int windows_read_frame(pgCameraObject* self, SDL_Surface* surf);
 int windows_frame_ready(pgCameraObject* self);
 
 #endif

@@ -23,19 +23,29 @@
 // HRESULT failure numbers can be looked up on hresult.info to get the actual name
 #define CHECKHR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media Foundation HRESULT failure %i on line %i", hr, __LINE__); return 0;}
 
+#define CALL(obj, method, ...) obj->lpVtbl->method(obj, __VA_ARGS__)
+
 #define FIRST_VIDEO MF_SOURCE_READER_FIRST_VIDEO_STREAM
+
+
+//TODO: make camera able to be restarted in place, started and restarted, etc.
+//TODO: check if started for get_image(), other functions?
+//TODO: implement get_raw()
+
+//TODO: narrow down compatibility to input types on this page:
+//https://docs.microsoft.com/en-us/windows/win32/medfound/video-processor-mft
 
 // drawn from:
 //https://docs.microsoft.com/en-us/windows/win32/medfound/video-subtype-guids
 #define NUMRGB 8
-static GUID* rgb_types[NUMRGB] = {&MFVideoFormat_RGB8, &MFVideoFormat_RGB555,
+const GUID* rgb_types[NUMRGB] = {&MFVideoFormat_RGB8, &MFVideoFormat_RGB555,
                                   &MFVideoFormat_RGB565, &MFVideoFormat_RGB24,
                                   &MFVideoFormat_RGB32, &MFVideoFormat_ARGB32,
                                   &MFVideoFormat_A2R10G10B10,
                                   &MFVideoFormat_A16B16G16R16F};
 
 #define NUMYUV 25
-static GUID* yuv_types[NUMYUV] = {&MFVideoFormat_AI44, &MFVideoFormat_AYUV,
+const GUID* yuv_types[NUMYUV] = {&MFVideoFormat_AI44, &MFVideoFormat_AYUV,
                                   &MFVideoFormat_I420, &MFVideoFormat_IYUV,
                                   &MFVideoFormat_NV11, &MFVideoFormat_NV12,
                                   &MFVideoFormat_UYVY, &MFVideoFormat_Y41P,
@@ -71,7 +81,10 @@ get_attr_string(IMFActivate *pActive) {
     UINT32 cchLength = 0;
     WCHAR *res = NULL;
 
-    hr = pActive->lpVtbl->GetStringLength(pActive, &MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &cchLength);
+    hr = CALL(pActive, GetStringLength, &MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
+              &cchLength);
+
+    //hr = pActive->lpVtbl->GetStringLength(pActive, &MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &cchLength);
     
     if (SUCCEEDED(hr)) {
         res = malloc(sizeof(WCHAR)*(cchLength+1));
@@ -80,8 +93,11 @@ get_attr_string(IMFActivate *pActive) {
     }
 
     if (SUCCEEDED(hr)) {
-        hr = pActive->lpVtbl->GetString(pActive,
-            &MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, res, cchLength + 1, &cchLength);
+        hr = CALL(pActive, GetString, &MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
+                  res, cchLength + 1, &cchLength);
+        
+        //hr = pActive->lpVtbl->GetString(pActive,
+        //    &MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, res, cchLength + 1, &cchLength);
     }
 
     return (WCHAR *)res;
@@ -261,8 +277,38 @@ DWORD WINAPI update_function(LPVOID lpParam) {
 
     IMFSourceReader* reader = self->reader;
     
+
+    IMFMediaType* output_type;
+    INT32 stride;
+
     while(1) {
         sample = NULL;
+
+        /* flip control subsystem -
+         * I managed to do it all within media foundation, without
+         * camera_mac.m's flip_image, or v4l2's set_controls API.
+         * The self->transform (Video Processor MFT) also exposes a control
+         * interface, which can be used to set vertical or horizontal
+         * mirroring, but not both. So for vertical mirroring, it changes the
+         * stride of the image so it comes out of the transform upside down */
+        if (self->hflip) {
+            hr = self->control->lpVtbl->SetMirror(self->control,
+                                                  MIRROR_HORIZONTAL);
+            CHECKHR(hr);
+        }
+        else {
+            hr = self->control->lpVtbl->SetMirror(self->control,
+                                                  MIRROR_NONE);
+            CHECKHR(hr);            
+        }
+
+        if (self->vflip != self->last_vflip) {
+            self->transform->lpVtbl->GetOutputCurrentType(self->transform, 0, &output_type);
+            output_type->lpVtbl->GetUINT32(output_type, &MF_MT_DEFAULT_STRIDE, &stride);
+            output_type->lpVtbl->SetUINT32(output_type, &MF_MT_DEFAULT_STRIDE, -stride);
+            self->transform->lpVtbl->SetOutputType(self->transform, 0, output_type, 0);
+            self->last_vflip = self->vflip;
+        }
 
         hr = reader->lpVtbl->ReadSample(reader, FIRST_VIDEO, 0, 0, &pdwStreamFlags, NULL, &sample);
         if (hr == -1072875772) { //MF_E_HW_MFT_FAILED_START_STREAMING
@@ -318,8 +364,13 @@ int windows_open_device(pgCameraObject *self) {
     HRESULT hr;
 
     /* setup the stuff before MFCreateSourceReaderFromMediaSource is called */
-    hr = CoInitializeEx(0, COINIT_MULTITHREADED);
+    
+    /* I wanted to use COINIT_MULTITHREADED, but something inside SDL started
+     * by display.set_mode() uses COINIT_APARTMENTTHREADED, and you can't have
+     * a thread in two modes at once */
+    hr = CoInitializeEx(0, COINIT_APARTMENTTHREADED);
     CHECKHR(hr);
+
     hr = MFStartup(MF_VERSION, MFSTARTUP_LITE);
     CHECKHR(hr);
 
@@ -386,9 +437,6 @@ int windows_open_device(pgCameraObject *self) {
     hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type, 0);
     CHECKHR(hr);
 
-    //hr = control->lpVtbl->SetMirror(control, MIRROR_VERTICAL | MIRROR_HORIZONTAL);
-    //CHECKHR(hr);
-
     MFT_OUTPUT_STREAM_INFO info;
     hr = self->transform->lpVtbl->GetOutputStreamInfo(self->transform, 0, &info);
     CHECKHR(hr);
@@ -397,7 +445,6 @@ int windows_open_device(pgCameraObject *self) {
     CHECKHR(MFCreateMemoryBuffer(info.cbSize, &self->buf));
 
     HANDLE update_thread = CreateThread(NULL, 0, update_function, self, 0, NULL);
-
     self->t_handle = update_thread;
 
     return 1;
@@ -409,6 +456,8 @@ int windows_close_device(pgCameraObject *self) {
 
     RELEASE(self->reader);
     CHECKHR(MFShutdown());
+
+    CoUninitialize();
     return 1;
 }
 

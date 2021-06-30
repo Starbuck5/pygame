@@ -273,7 +273,7 @@ camera_get_controls(pgCameraObject *self, PyObject *args)
     return Py_BuildValue("(NNN)", PyBool_FromLong(self->hflip),
                          PyBool_FromLong(self->vflip),
                          PyInt_FromLong(self->brightness));
-#elif defined(PYGAME_MAC_CAMERA_OLD)
+#elif defined(PYGAME_MAC_CAMERA_OLD) || defined(PYGAME_WINDOWS_CAMERA)
     return Py_BuildValue("(NNN)", PyBool_FromLong(self->hflip),
                          PyBool_FromLong(self->vflip), PyInt_FromLong(-1));
 #endif
@@ -311,11 +311,10 @@ camera_set_controls(pgCameraObject *self, PyObject *arg, PyObject *kwds)
                          PyBool_FromLong(self->vflip),
                          PyInt_FromLong(self->brightness));
 
-#elif defined(PYGAME_MAC_CAMERA_OLD)
+#elif defined(PYGAME_MAC_CAMERA_OLD) || defined(PYGAME_WINDOWS_CAMERA)
     int hflip = 0, vflip = 0, brightness = 0;
     char *kwids[] = {"hflip", "vflip", "brightness", NULL};
 
-    camera_get_controls(self, NULL);
     hflip = self->hflip;
     vflip = self->vflip;
     brightness = -1;
@@ -1946,6 +1945,9 @@ Camera(pgCameraObject *self, PyObject *arg)
     char* color;
     IMFActivate* p = NULL;
 
+    w = DEFAULT_WIDTH;
+    h = DEFAULT_HEIGHT;
+
     if (!PyArg_ParseTuple(arg, "O|(ii)s", &name_obj, &w, &h, &color))
         return NULL;
 
@@ -1965,6 +1967,9 @@ Camera(pgCameraObject *self, PyObject *arg)
     cameraobj->width = w;
     cameraobj->height = h;
     cameraobj->open = 1;
+    cameraobj->hflip = 0;
+    cameraobj->vflip = 0;
+    cameraobj->last_vflip = 0;
 
     return (PyObject *)cameraobj;
 #endif
