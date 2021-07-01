@@ -482,6 +482,8 @@ camera_get_raw(pgCameraObject *self, PyObject *args)
     return v4l2_read_raw(self);
 #elif defined(PYGAME_MAC_CAMERA_OLD)
     return mac_read_raw(self);
+#elif defined(PYGAME_WINDOWS_CAMERA)
+    return windows_read_raw(self);
 #endif
     Py_RETURN_NONE;
 }
@@ -1970,6 +1972,8 @@ Camera(pgCameraObject *self, PyObject *arg)
     cameraobj->hflip = 0;
     cameraobj->vflip = 0;
     cameraobj->last_vflip = 0;
+    cameraobj->raw_buf = NULL;
+    cameraobj->buf = NULL;
 
     return (PyObject *)cameraobj;
 #endif

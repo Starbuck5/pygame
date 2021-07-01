@@ -43,8 +43,8 @@
 
 //TODO: make camera able to be restarted in place, started and restarted, etc.
 //TODO: check if started for get_image(), other functions?
-//TODO: implement get_raw()
-//TOOD: improved memory management everywhere
+//TOOD: improve memory management everywhere
+//TODO: fix up get_raw() docs and stubs. It returns bytes
 
 /* These are the only supported input types
  * (TODO?) broaden in the future by enumerating MFTs to find decoders?
@@ -254,11 +254,12 @@ _create_media_type(IMFMediaType** mp, IMFSourceReader* reader, int width,
     int difference = 100000000;
     int current_difference;
     int index = -1;
+    int requested_diagonal = DISTANCE(width, height);
 
     for (int i=0; i < type_count; i++) {
-        current_difference = diagonal_distances[i] - DISTANCE(width, height);
+        current_difference = diagonal_distances[i] - requested_diagonal;
         current_difference = abs(current_difference);
-        if (current_difference < difference && native_types[index]) {
+        if (current_difference < difference && native_types[i]) {
             index = i;
             difference = current_difference;
         }
@@ -305,7 +306,6 @@ update_function(LPVOID lpParam)
     DWORD pdwStreamFlags;
 
     IMFSourceReader* reader = self->reader;
-    
 
     IMFMediaType* output_type;
     INT32 stride;
@@ -365,6 +365,10 @@ update_function(LPVOID lpParam)
         }
 
         if (sample) {
+            /* Put unprocessed sample into another buffer for get_raw() */
+            RELEASE(self->raw_buf);
+            sample->lpVtbl->ConvertToContiguousBuffer(sample, &self->raw_buf);
+
             hr = self->transform->lpVtbl->ProcessInput(self->transform, 0,
                                                        sample, 0);
             CHECKHR(hr);
@@ -475,7 +479,7 @@ windows_open_device(pgCameraObject *self)
     hr = reader->lpVtbl->SetCurrentMediaType(reader, FIRST_VIDEO, NULL, 
                                              media_type);
     CHECKHR(hr);
-    
+
     IMFVideoProcessorControl* control;
     IMFTransform* transform;
 
@@ -502,7 +506,6 @@ windows_open_device(pgCameraObject *self)
     hr = self->transform->lpVtbl->GetOutputStreamInfo(self->transform, 0, 
                                                       &info);
     CHECKHR(hr);
-    //printf("OUTPUT BYTES SIZE=%i\n", info.cbSize);
 
     CHECKHR(MFCreateMemoryBuffer(info.cbSize, &self->buf));
 
@@ -556,4 +559,32 @@ int
 windows_frame_ready(pgCameraObject *self)
 {
     return self->buffer_ready;
+}
+
+PyObject*
+windows_read_raw(pgCameraObject *self)
+{
+    PyObject* data = NULL;
+
+    if (self->raw_buf) {
+        printf("hey\n");
+        BYTE *buf_data;
+        DWORD buf_max_length;
+        DWORD buf_length;
+        self->raw_buf->lpVtbl->Lock(self->raw_buf, &buf_data, &buf_max_length,
+                                    &buf_length);
+
+        printf("lo\n");
+
+        data = Bytes_FromStringAndSize(buf_data, buf_length);
+
+        self->raw_buf->lpVtbl->Unlock(self->raw_buf);
+
+        self->buffer_ready = 0;
+
+        return data;
+    }
+    
+    /* should this be an error instead? */
+    Py_RETURN_NONE;
 }

@@ -140,6 +140,7 @@ typedef struct pgCameraObject {
     IMFTransform* transform;
     IMFVideoProcessorControl* control;
     IMFMediaBuffer* buf;
+    IMFMediaBuffer* raw_buf;
     int buffer_ready;
     int open; /* used to signal the update_function to exit */
     HANDLE t_handle;
@@ -239,6 +240,7 @@ IMFActivate* windows_device_from_name(WCHAR* device_name);
 int windows_close_device(pgCameraObject* self);
 int windows_read_frame(pgCameraObject* self, SDL_Surface* surf);
 int windows_frame_ready(pgCameraObject* self);
+PyObject* windows_read_raw(pgCameraObject* self);
 
 #endif
 
