@@ -79,6 +79,9 @@
 #ifndef V4L2_PIX_FMT_YUYV
     #define V4L2_PIX_FMT_YUYV 'YUYV'
 #endif
+#ifndef V4L2_PIX_FMT_XBGR32
+    #define V4L2_PIX_FMT_XBGR32 'XR24'
+#endif
 
 #define CLEAR(x) memset (&(x), 0, sizeof (x))
 #define SAT(c) if (c & (~255)) { if (c < 0) c = 0; else c = 255; }
@@ -149,6 +152,8 @@ typedef struct pgCameraObject {
     int hflip;
     int vflip;
     int last_vflip;
+    int color_out;
+    unsigned long pixelformat;
 } pgCameraObject;
 
 #else
@@ -176,6 +181,7 @@ typedef struct pgCameraObject {
 /* internal functions for colorspace conversion */
 void colorspace (SDL_Surface *src, SDL_Surface *dst, int cspace);
 void rgb24_to_rgb (const void* src, void* dst, int length, SDL_PixelFormat* format);
+void bgr32_to_rgb (const void* src, void* dst, int length, SDL_PixelFormat* format);
 void rgb444_to_rgb (const void* src, void* dst, int length, SDL_PixelFormat* format);
 void rgb_to_yuv (const void* src, void* dst, int length,
                  unsigned long source, SDL_PixelFormat* format);
@@ -241,6 +247,8 @@ int windows_close_device(pgCameraObject* self);
 int windows_read_frame(pgCameraObject* self, SDL_Surface* surf);
 int windows_frame_ready(pgCameraObject* self);
 PyObject* windows_read_raw(pgCameraObject* self);
+int windows_process_image(pgCameraObject *self, BYTE* data, DWORD buffer_size,
+                          SDL_Surface *surf);
 
 #endif
 

@@ -570,6 +570,71 @@ rgb24_to_rgb(const void *src, void *dst, int length, SDL_PixelFormat *format)
     }
 }
 
+/* slight variation on rgb24_to_rgb, just drops the 4th byte of each pixel,
+ * changes the R, G, B ordering. */
+void
+bgr32_to_rgb(const void *src, void *dst, int length, SDL_PixelFormat *format)
+{
+    Uint8 *s = (Uint8 *)src;
+    Uint8 *d8;
+    Uint16 *d16;
+    Uint32 *d32;
+    Uint8 r, g, b;
+    int rshift, gshift, bshift, rloss, gloss, bloss;
+
+    rshift = format->Rshift;
+    gshift = format->Gshift;
+    bshift = format->Bshift;
+    rloss = format->Rloss;
+    gloss = format->Gloss;
+    bloss = format->Bloss;
+
+    switch (format->BytesPerPixel) {
+        case 1:
+            d8 = (Uint8 *)dst;
+            while (length--) {
+                b = *s++;
+                g = *s++;
+                r = *s++;
+                *s++;
+                *d8++ = ((r >> rloss) << rshift) | ((g >> gloss) << gshift) |
+                        ((b >> bloss) << bshift);
+            }
+            break;
+        case 2:
+            d16 = (Uint16 *)dst;
+            while (length--) {
+                b = *s++;
+                g = *s++;
+                r = *s++;
+                *s++;
+                *d16++ = ((r >> rloss) << rshift) | ((g >> gloss) << gshift) |
+                         ((b >> bloss) << bshift);
+            }
+            break;
+        case 3:
+            d8 = (Uint8 *)dst;
+            while (length--) {
+                *d8++ = *s;       /* red */
+                *d8++ = *(s + 1); /* green */
+                *d8++ = *(s + 2); /* blue */
+                s += 4;
+            }
+            break;
+        default:
+            d32 = (Uint32 *)dst;
+            while (length--) {
+                b = *s++;
+                g = *s++;
+                r = *s++;
+                *s++;
+                *d32++ = ((r >> rloss) << rshift) | ((g >> gloss) << gshift) |
+                         ((b >> bloss) << bshift);
+            }
+            break;
+    }
+}
+
 /* converts packed rgb to packed hsv. formulas modified from wikipedia */
 void
 rgb_to_hsv(const void *src, void *dst, int length, unsigned long source,
@@ -596,62 +661,29 @@ rgb_to_hsv(const void *src, void *dst, int length, unsigned long source,
 
     /* you could stick the if statement inside the loop, but I'm sacrificing a
        a few hundred bytes for a little performance */
-    if (source == V4L2_PIX_FMT_RGB444) {
+    /* 10 yrs later... about that... */
+    if (source == V4L2_PIX_FMT_RGB444 || source == V4L2_PIX_FMT_RGB24 || 
+        source == V4L2_PIX_FMT_XBGR32)
+    {
         while (length--) {
-            p1 = *s8++;
-            p2 = *s8++;
-            b = p2 << 4;
-            g = p1 & 0xF0;
-            r = p1 << 4;
-            max = MAX(MAX(r, g), b);
-            min = MIN(MIN(r, g), b);
-            delta = max - min;
-            v = max;      /* value (similar to luminosity) */
-            if (!delta) { /* grey, zero hue and saturation */
-                s = 0;
-                h = 0;
+            if (source == V4L2_PIX_FMT_RGB444) {
+                p1 = *s8++;
+                p2 = *s8++;
+                b = p2 << 4;
+                g = p1 & 0xF0;
+                r = p1 << 4;
+            }
+            else if (source == V4L2_PIX_FMT_RGB24) {
+                r = *s8++;
+                g = *s8++;
+                b = *s8++;
             }
             else {
-                s = 255 * delta / max; /* saturation */
-                if (r == max) {        /* set hue based on max color */
-                    h = 43 * (g - b) / delta;
-                }
-                else if (g == max) {
-                    h = 85 + 43 * (b - r) / delta;
-                }
-                else {
-                    h = 170 + 43 * (r - g) / delta;
-                }
+                b = *s8++;
+                g = *s8++;
+                r = *s8++;
+                *s8++;
             }
-            switch (format->BytesPerPixel) {
-                case 1:
-                    *d8++ = ((h >> rloss) << rshift) |
-                            ((s >> gloss) << gshift) |
-                            ((v >> bloss) << bshift);
-                    break;
-                case 2:
-                    *d16++ = ((h >> rloss) << rshift) |
-                             ((s >> gloss) << gshift) |
-                             ((v >> bloss) << bshift);
-                    break;
-                case 3:
-                    *d8++ = v;
-                    *d8++ = s;
-                    *d8++ = h;
-                    break;
-                default:
-                    *d32++ = ((h >> rloss) << rshift) |
-                             ((s >> gloss) << gshift) |
-                             ((v >> bloss) << bshift);
-                    break;
-            }
-        }
-    }
-    else if (source == V4L2_PIX_FMT_RGB24) {
-        while (length--) {
-            r = *s8++;
-            g = *s8++;
-            b = *s8++;
             max = MAX(MAX(r, g), b);
             min = MIN(MIN(r, g), b);
             delta = max - min;
@@ -792,45 +824,29 @@ rgb_to_yuv(const void *src, void *dst, int length, unsigned long source,
     gloss = format->Gloss;
     bloss = format->Bloss;
 
-    if (source == V4L2_PIX_FMT_RGB444) {
+    if (source == V4L2_PIX_FMT_RGB444 || source == V4L2_PIX_FMT_RGB24 ||
+        source == V4L2_PIX_FMT_XBGR32)
+    {
         while (length--) {
-            p1 = *s8++;
-            p2 = *s8++;
-            b = p2 << 4;
-            g = p1 & 0xF0;
-            r = p1 << 4;
-            v = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;  /* V */
-            u = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128; /* U */
-            y = (77 * r + 150 * g + 29 * b + 128) >> 8;          /* Y */
-            switch (format->BytesPerPixel) {
-                case 1:
-                    *d8++ = ((y >> rloss) << rshift) |
-                            ((u >> gloss) << gshift) |
-                            ((v >> bloss) << bshift);
-                    break;
-                case 2:
-                    *d16++ = ((y >> rloss) << rshift) |
-                             ((u >> gloss) << gshift) |
-                             ((v >> bloss) << bshift);
-                    break;
-                case 3:
-                    *d8++ = v;
-                    *d8++ = u;
-                    *d8++ = y;
-                    break;
-                default:
-                    *d32++ = ((y >> rloss) << rshift) |
-                             ((u >> gloss) << gshift) |
-                             ((v >> bloss) << bshift);
-                    break;
+            if (source == V4L2_PIX_FMT_RGB444) {
+                p1 = *s8++;
+                p2 = *s8++;
+                b = p2 << 4;
+                g = p1 & 0xF0;
+                r = p1 << 4;
             }
-        }
-    }
-    else if (source == V4L2_PIX_FMT_RGB24) {
-        while (length--) {
-            r = *s8++;
-            g = *s8++;
-            b = *s8++;
+            else if (source == V4L2_PIX_FMT_RGB24) {
+                r = *s8++;
+                g = *s8++;
+                b = *s8++;                
+            }
+            else {
+                b = *s8++;
+                g = *s8++;
+                r = *s8++;
+                *s8++;           
+            }
+
             v = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;  /* V */
             u = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128; /* U */
             y = (77 * r + 150 * g + 29 * b + 128) >> 8;          /* Y */
@@ -1963,6 +1979,21 @@ Camera(pgCameraObject *self, PyObject *arg)
     }
 
     cameraobj = PyObject_NEW(pgCameraObject, &pgCamera_Type);
+
+    if (color) {
+        if (!strcmp(color, "YUV")) {
+            cameraobj->color_out = YUV_OUT;
+        }
+        else if (!strcmp(color, "HSV")) {
+            cameraobj->color_out = HSV_OUT;
+        }
+        else {
+            cameraobj->color_out = RGB_OUT;
+        }
+    }
+    else {
+        cameraobj->color_out = RGB_OUT;
+    }
 
     cameraobj->device_name = dev_name;
     cameraobj->activate = p;

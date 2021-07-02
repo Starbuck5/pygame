@@ -458,24 +458,6 @@ windows_open_device(pgCameraObject *self)
     self->width = size >> 32;
     self->height = size << 32 >> 32;
 
-    IMFMediaType* conv_type;
-    CHECKHR(MFCreateMediaType(&conv_type));
-    hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_MAJOR_TYPE,
-                                    &MFMediaType_Video);
-    CHECKHR(hr);
-    hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_SUBTYPE,
-                                    &MFVideoFormat_RGB32);
-    CHECKHR(hr);
-
-    /* make sure the output is right side up by default
-     * multiplied by 4 because that is the number of bytes per pixel */
-    hr = conv_type->lpVtbl->SetUINT32(conv_type, &MF_MT_DEFAULT_STRIDE, 
-                                      self->width * 4);
-    CHECKHR(hr);
-
-    hr = conv_type->lpVtbl->SetUINT64(conv_type, &MF_MT_FRAME_SIZE, size);
-    CHECKHR(hr);
-
     hr = reader->lpVtbl->SetCurrentMediaType(reader, FIRST_VIDEO, NULL, 
                                              media_type);
     CHECKHR(hr);
@@ -497,6 +479,57 @@ windows_open_device(pgCameraObject *self)
     self->transform = transform;
 
     hr = transform->lpVtbl->SetInputType(transform, 0, media_type, 0);
+    CHECKHR(hr);
+
+    IMFMediaType* conv_type;
+    CHECKHR(MFCreateMediaType(&conv_type));
+    hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_MAJOR_TYPE,
+                                    &MFMediaType_Video);
+    CHECKHR(hr);
+
+    int depth;
+
+    hr = conv_type->lpVtbl->SetUINT64(conv_type, &MF_MT_FRAME_SIZE, size);
+    CHECKHR(hr);
+
+    if (self->color_out != YUV_OUT) {
+        hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_SUBTYPE,
+                                        &MFVideoFormat_RGB32);
+        CHECKHR(hr);
+
+        hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type, MFT_SET_TYPE_TEST_ONLY);
+        CHECKHR(hr);
+        self->pixelformat = MFVideoFormat_RGB32.Data1;
+        depth = 4;
+    }
+
+    else {
+        hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_SUBTYPE,
+                                        &MFVideoFormat_YUY2);
+        CHECKHR(hr);
+
+        hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type, MFT_SET_TYPE_TEST_ONLY);
+        if (hr == -1072875852) { //MF_E_INVALIDMEDIATYPE
+            hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_SUBTYPE,
+                                            &MFVideoFormat_RGB32);
+            CHECKHR(hr);
+
+            hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type, MFT_SET_TYPE_TEST_ONLY);
+            CHECKHR(hr);
+            self->pixelformat = MFVideoFormat_RGB32.Data1;
+            depth = 4;
+        }
+        else {
+            CHECKHR(hr);
+            self->pixelformat = MFVideoFormat_YUY2.Data1;
+            depth = 2;
+        }   
+    }
+
+    /* make sure the output is right side up by default
+     * multiplied by 4 because that is the number of bytes per pixel */
+    hr = conv_type->lpVtbl->SetUINT32(conv_type, &MF_MT_DEFAULT_STRIDE, 
+                                      self->width * depth);
     CHECKHR(hr);
 
     hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type, 0);
@@ -530,24 +563,71 @@ windows_close_device(pgCameraObject *self)
 }
 
 int
+windows_process_image(pgCameraObject *self, BYTE* data, DWORD length,
+                      SDL_Surface *surf)
+{
+    SDL_LockSurface(surf);
+
+    int size = self->width * self->height;
+
+    /* apparently RGB32 is actually BGR to Microsoft */
+    if (self->pixelformat == MFVideoFormat_RGB32.Data1) {
+        switch(self->color_out) {
+            case RGB_OUT:
+                /* optimized for 32 bit output surfaces
+                 * this won't be possible always, TODO implement switching logic */
+                //memcpy(surf->pixels, data, length);
+
+                bgr32_to_rgb(data, surf->pixels, size, surf->format);
+                break;
+            case YUV_OUT:
+                rgb_to_yuv(data, surf->pixels, size, V4L2_PIX_FMT_XBGR32, surf->format);
+                break;
+            case HSV_OUT:
+                rgb_to_hsv(data, surf->pixels, size, V4L2_PIX_FMT_XBGR32, surf->format);
+                break;
+        }
+    }
+
+    if (self->pixelformat == MFVideoFormat_YUY2.Data1) {
+        switch (self->color_out) {
+            case YUV_OUT:
+                yuyv_to_yuv(data, surf->pixels, size, surf->format);
+                break;
+            case RGB_OUT:
+                yuyv_to_rgb(data, surf->pixels, size, surf->format);
+                break;
+            case HSV_OUT:
+                yuyv_to_rgb(data, surf->pixels, size, surf->format);
+                rgb_to_hsv(surf->pixels, surf->pixels, size, V4L2_PIX_FMT_YUYV, surf->format);
+                break;
+        }
+    }
+
+    SDL_UnlockSurface(surf);
+
+    return 1;
+}   
+
+int
 windows_read_frame(pgCameraObject *self, SDL_Surface *surf)
 {
+    HRESULT hr;
+
     if (self->buf) {
         BYTE *buf_data;
         DWORD buf_max_length;
         DWORD buf_length;
-        self->buf->lpVtbl->Lock(self->buf, &buf_data, &buf_max_length,
-                                &buf_length);
+        hr = self->buf->lpVtbl->Lock(self->buf, &buf_data, &buf_max_length,
+                                     &buf_length);
+        CHECKHR(hr);
 
-        SDL_LockSurface(surf);
+        if (!windows_process_image(self, buf_data, buf_length, surf)) {
+            return 0;
+        }
 
-        /* optimized for 32 bit output surfaces
-         * this won't be possible always, TODO implement switching logic */
-        memcpy(surf->pixels, buf_data, buf_length);
-
-        SDL_UnlockSurface(surf);
-
-        self->buf->lpVtbl->Unlock(self->buf);
+        hr = self->buf->lpVtbl->Unlock(self->buf);
+        CHECKHR(hr);
 
         self->buffer_ready = 0;
     }
@@ -559,26 +639,26 @@ int
 windows_frame_ready(pgCameraObject *self)
 {
     return self->buffer_ready;
-}
+}              
 
 PyObject*
 windows_read_raw(pgCameraObject *self)
 {
     PyObject* data = NULL;
+    HRESULT hr;
 
     if (self->raw_buf) {
-        printf("hey\n");
         BYTE *buf_data;
         DWORD buf_max_length;
         DWORD buf_length;
-        self->raw_buf->lpVtbl->Lock(self->raw_buf, &buf_data, &buf_max_length,
-                                    &buf_length);
-
-        printf("lo\n");
+        hr = self->raw_buf->lpVtbl->Lock(self->raw_buf, &buf_data,
+                                         &buf_max_length, &buf_length);
+        CHECKHR(hr);
 
         data = Bytes_FromStringAndSize(buf_data, buf_length);
 
-        self->raw_buf->lpVtbl->Unlock(self->raw_buf);
+        hr = self->raw_buf->lpVtbl->Unlock(self->raw_buf);
+        CHECKHR(hr);
 
         self->buffer_ready = 0;
 
