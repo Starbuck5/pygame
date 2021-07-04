@@ -171,10 +171,10 @@ defined(PYGAME_WINDOWS_CAMERA)
     devices = windows_list_cameras(&num_devices);
 #endif
     for (i = 0; i < num_devices; i++) {
-#if !defined(PYGAME_WINDOWS_CAMERA)
-        string = Text_FromUTF8(devices[i]);
-#else
+#if defined(PYGAME_WINDOWS_CAMERA)
         string = PyUnicode_FromWideChar(devices[i], -1);
+#else
+        string = Text_FromUTF8(devices[i]);  
 #endif
         if (0 != PyList_Append(ret_list, string)) {
             /* Append failed; clean up and return */
@@ -224,7 +224,13 @@ camera_start(pgCameraObject *self, PyObject *args)
         return NULL;
     }
 #elif defined(PYGAME_WINDOWS_CAMERA)
+    printf("self->open = %i\n", self->open);
+    if (self->open) { /* camera already started */
+        Py_RETURN_NONE;
+    }
+
     if (!windows_open_device(self)) {
+        windows_close_device(self);
         return NULL;
     }   
 #endif
@@ -1802,6 +1808,11 @@ PyMethodDef cameraobj_builtins[] = {
 void
 camera_dealloc(PyObject *self)
 {
+#if defined(PYGAME_WINDOWS_CAMERA)
+    if (((pgCameraObject *)self)->open) {
+        windows_close_device(self);  
+    }
+#endif
     free(((pgCameraObject *)self)->device_name);
     PyObject_DEL(self);
 }
@@ -1969,7 +1980,7 @@ Camera(pgCameraObject *self, PyObject *arg)
     if (!PyArg_ParseTuple(arg, "O|(ii)s", &name_obj, &w, &h, &color))
         return NULL;
 
-    //needs to be freed with PyMem_Free later
+    /* needs to be freed with PyMem_Free later */
     dev_name = PyUnicode_AsWideCharString(name_obj, NULL);
 
     p = windows_device_from_name(dev_name);
@@ -1999,12 +2010,14 @@ Camera(pgCameraObject *self, PyObject *arg)
     cameraobj->activate = p;
     cameraobj->width = w;
     cameraobj->height = h;
-    cameraobj->open = 1;
+    cameraobj->open = 0;
     cameraobj->hflip = 0;
     cameraobj->vflip = 0;
     cameraobj->last_vflip = 0;
+    
     cameraobj->raw_buf = NULL;
     cameraobj->buf = NULL;
+    cameraobj->t_handle = NULL;
 
     return (PyObject *)cameraobj;
 #endif

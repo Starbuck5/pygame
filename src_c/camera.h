@@ -138,14 +138,13 @@ typedef struct pgCameraObject {
     PyObject_HEAD
     WCHAR* device_name;
     IMFActivate* activate;
-    IMFMediaSource* source;
     IMFSourceReader* reader;
     IMFTransform* transform;
     IMFVideoProcessorControl* control;
     IMFMediaBuffer* buf;
     IMFMediaBuffer* raw_buf;
     int buffer_ready;
-    int open; /* used to signal the update_function to exit */
+    short open; /* used to signal the update_function to exit */
     HANDLE t_handle;
     int width;
     int height;
