@@ -224,7 +224,6 @@ camera_start(pgCameraObject *self, PyObject *args)
         return NULL;
     }
 #elif defined(PYGAME_WINDOWS_CAMERA)
-    printf("self->open = %i\n", self->open);
     if (self->open) { /* camera already started */
         Py_RETURN_NONE;
     }
@@ -254,8 +253,10 @@ camera_stop(pgCameraObject *self, PyObject *args)
     if (mac_close_device(self) == 0)
         return NULL;
 #elif defined(PYGAME_WINDOWS_CAMERA)
-    if (!windows_close_device(self))
-        return NULL;
+    if (self->open) { /* camera started */
+        if (!windows_close_device(self))
+            return NULL;
+    }
 #endif
     Py_RETURN_NONE;
 }
@@ -1810,9 +1811,9 @@ camera_dealloc(PyObject *self)
 {
 #if defined(PYGAME_WINDOWS_CAMERA)
     if (((pgCameraObject *)self)->open) {
-        windows_close_device(self);  
+        windows_close_device((pgCameraObject *)self);  
     }
-    windows_dealloc_device(self);
+    windows_dealloc_device((pgCameraObject *)self);
 #else
     free(((pgCameraObject *)self)->device_name);
 #endif
@@ -2009,7 +2010,6 @@ Camera(pgCameraObject *self, PyObject *arg)
     }
 
     cameraobj->device_name = dev_name;
-    cameraobj->activate = p;
     cameraobj->width = w;
     cameraobj->height = h;
     cameraobj->open = 0;
@@ -2020,6 +2020,8 @@ Camera(pgCameraObject *self, PyObject *arg)
     cameraobj->raw_buf = NULL;
     cameraobj->buf = NULL;
     cameraobj->t_handle = NULL;
+
+    windows_init_device(self);
 
     return (PyObject *)cameraobj;
 #endif

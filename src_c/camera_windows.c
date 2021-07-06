@@ -45,11 +45,10 @@
 
 #define DISTANCE(x, y) (int)pow(x, 2) + (int)pow(y, 2)
 
-//TODO: make camera able to be restarted in place, started and restarted, etc.
 //TODO: check if started for get_image(), other functions?
-//TOOD: improve memory management everywhere
 //TODO: fix up get_raw() docs and stubs. It returns bytes
 //TODO: make sure functions are correct before start() and after stop()
+//TODO: get_image() and get_raw() should crash if the camera isn't open
 
 /* These are the only supported input types
  * (TODO?) broaden in the future by enumerating MFTs to find decoders?
@@ -551,23 +550,13 @@ windows_open_device(pgCameraObject *self)
     IMFMediaType *source_type = NULL;
     IMFMediaType* conv_type = NULL;
     MFT_OUTPUT_STREAM_INFO info;
-    UINT64 size;
     HRESULT hr;
 
-    /* setup the stuff before MFCreateSourceReaderFromMediaSource is called */
-    
-    /* I wanted to use COINIT_MULTITHREADED, but something inside SDL started
-     * by display.set_mode() uses COINIT_APARTMENTTHREADED, and you can't have
-     * a thread in two modes at once */
-    hr = CoInitializeEx(0, COINIT_APARTMENTTHREADED);
-    SETERROR(hr);
+    IMFActivate *act = windows_device_from_name(self->device_name);
 
-    hr = MFStartup(MF_VERSION, MFSTARTUP_LITE);
+    hr = act->lpVtbl->ActivateObject(act, &IID_IMFMediaSource, &source);
     SETERROR(hr);
-
-    hr = self->activate->lpVtbl->ActivateObject(self->activate,
-                                                &IID_IMFMediaSource, &source);
-    SETERROR(hr);
+    RELEASE(act);
 
     /* The commented out code below sets the source reader to use video
      * processing, which guarantees it can output RGB32 from any format.
@@ -584,12 +573,9 @@ windows_open_device(pgCameraObject *self)
     CHECKHR(hr);
     */
 
-    self->open = 1;
-
     hr = MFCreateSourceReaderFromMediaSource(source, NULL, &reader);
     self->reader = reader;
     SETERROR(hr);
-
     RELEASE(source);
     
     if(!_select_source_type(self, &source_type)) {
@@ -631,6 +617,7 @@ windows_open_device(pgCameraObject *self)
 
     self->t_handle = CreateThread(NULL, 0, update_function, self, 0, NULL);
 
+    self->open = 1; /* set here, since this shouldn't happen on error */
     return 1;
 
     cleanup:
@@ -649,20 +636,34 @@ windows_close_device(pgCameraObject *self)
     RELEASE(self->reader);
     RELEASE(self->transform);
     RELEASE(self->control);
-    
     RELEASE(self->buf);
     RELEASE(self->raw_buf);
 
-    MFShutdown();
-    CoUninitialize();
     return 1;
+}
+
+int
+windows_init_device(pgCameraObject* self)
+{
+    HRESULT hr;
+
+    /* I wanted to use COINIT_MULTITHREADED, but something inside SDL started
+     * by display.set_mode() uses COINIT_APARTMENTTHREADED, and you can't have
+     * a thread in two modes at once */
+    hr = CoInitializeEx(0, COINIT_APARTMENTTHREADED);
+    CHECKHR(hr);
+
+    hr = MFStartup(MF_VERSION, MFSTARTUP_LITE);
+    CHECKHR(hr);
 }
 
 int
 windows_dealloc_device(pgCameraObject *self)
 {
-    RELEASE(self->activate);
     PyMem_Free(self->device_name);
+
+    MFShutdown();
+    CoUninitialize();
 }
 
 int
