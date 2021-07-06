@@ -1812,8 +1812,10 @@ camera_dealloc(PyObject *self)
     if (((pgCameraObject *)self)->open) {
         windows_close_device(self);  
     }
-#endif
+    windows_dealloc_device(self);
+#else
     free(((pgCameraObject *)self)->device_name);
+#endif
     PyObject_DEL(self);
 }
 /*

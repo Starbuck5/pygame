@@ -29,7 +29,7 @@
 
 #include <math.h>
 
-#define RELEASE(obj) if (obj) {obj->lpVtbl->Release(obj);}
+#define RELEASE(obj) if (obj) {obj->lpVtbl->Release(obj); obj = NULL;}
 
 #define SETERROR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media Foundation HRESULT failure %i on line %i", hr, __LINE__); goto cleanup;}
 
@@ -49,6 +49,7 @@
 //TODO: check if started for get_image(), other functions?
 //TOOD: improve memory management everywhere
 //TODO: fix up get_raw() docs and stubs. It returns bytes
+//TODO: make sure functions are correct before start() and after stop()
 
 /* These are the only supported input types
  * (TODO?) broaden in the future by enumerating MFTs to find decoders?
@@ -648,14 +649,20 @@ windows_close_device(pgCameraObject *self)
     RELEASE(self->reader);
     RELEASE(self->transform);
     RELEASE(self->control);
-    RELEASE(self->activate);
+    
     RELEASE(self->buf);
     RELEASE(self->raw_buf);
-    PyMem_Free(self->device_name);
 
     MFShutdown();
     CoUninitialize();
     return 1;
+}
+
+int
+windows_dealloc_device(pgCameraObject *self)
+{
+    RELEASE(self->activate);
+    PyMem_Free(self->device_name);
 }
 
 int
