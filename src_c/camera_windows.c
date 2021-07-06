@@ -1,7 +1,7 @@
 /*
  * Windows Camera - webcam support for pygame
  * Original Author: Charlie Hayden, 2021
- *
+ * 
  * This sub-module adds native support for windows webcams to pygame,
  * made possible by Microsoft Media Foundation.
  * 
@@ -31,11 +31,17 @@
 
 #define RELEASE(obj) if (obj) {obj->lpVtbl->Release(obj); obj = NULL;}
 
-#define SETERROR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media Foundation HRESULT failure %i on line %i", hr, __LINE__); goto cleanup;}
-
-/* HRESULT failure numbers can be looked up on 
+/* HRESULT failure numbers can be looked up on
  * hresult.info to get the actual name */
-#define CHECKHR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media Foundation HRESULT failure %i on line %i", hr, __LINE__); printf("Media Foundation HRESULT failure %i on line %i\n", hr, __LINE__); return 0;}
+#define CHECKHR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media "\
+                                   "Foundation HRESULT failure %i on "\
+                                   "camera_windows.c line %i", hr, __LINE__);\
+                                   return 0;}
+
+#define HANDLEHR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media "\
+                                    "Foundation HRESULT failure %i on camera"\
+                                    "_windows.c line %i", hr, __LINE__);\
+                                    goto cleanup;}
 
 #define FIRST_VIDEO MF_SOURCE_READER_FIRST_VIDEO_STREAM
 #define DEVSOURCE_VIDCAP_GUID MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID
@@ -45,10 +51,7 @@
 
 #define DISTANCE(x, y) (int)pow(x, 2) + (int)pow(y, 2)
 
-//TODO: check if started for get_image(), other functions?
 //TODO: fix up get_raw() docs and stubs. It returns bytes
-//TODO: make sure functions are correct before start() and after stop()
-//TODO: get_image() and get_raw() should crash if the camera isn't open
 
 /* These are the only supported input types
  * (TODO?) broaden in the future by enumerating MFTs to find decoders?
@@ -66,18 +69,18 @@ const GUID* inp_types[NUM_FORM] = {&MFVideoFormat_ARGB32, &MFVideoFormat_AYUV,
                                    &MFVideoFormat_Y42T, &MFVideoFormat_YUY2,
                                    &MFVideoFormat_YV12, &MFVideoFormat_YVYU};
 
-int 
+int
 _is_supported_input_format(GUID format)
 {
     for (int i=0; i<NUM_FORM; i++) {
         if (format.Data1 == inp_types[i]->Data1)
             return 1;
     }
-    return 0;   
+    return 0;
 }
 
 int
-_get_name_from_activate(IMFActivate *pActive, WCHAR **ppAttr) 
+_get_name_from_activate(IMFActivate *pActive, WCHAR **ppAttr)
 {
     HRESULT hr;
     UINT32 cchLength = 0;
@@ -86,7 +89,7 @@ _get_name_from_activate(IMFActivate *pActive, WCHAR **ppAttr)
     hr = pActive->lpVtbl->GetStringLength(pActive, &DEVSOURCE_NAME,
                                           &cchLength);
     CHECKHR(hr);
-    
+
     res = malloc(sizeof(WCHAR)*(cchLength+1));
     if (!res) {
         hr = E_OUTOFMEMORY;
@@ -95,7 +98,7 @@ _get_name_from_activate(IMFActivate *pActive, WCHAR **ppAttr)
 
     hr = pActive->lpVtbl->GetString(pActive, &DEVSOURCE_NAME, res,
                                     cchLength + 1, &cchLength);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     *ppAttr = res;
     return 1;
@@ -106,7 +109,7 @@ _get_name_from_activate(IMFActivate *pActive, WCHAR **ppAttr)
 }
 
 WCHAR **
-windows_list_cameras(int *num_devices) 
+windows_list_cameras(int *num_devices)
 {
     WCHAR** devices = NULL;
     IMFAttributes *pAttributes = NULL;
@@ -115,22 +118,22 @@ windows_list_cameras(int *num_devices)
     HRESULT hr;
 
     hr = MFCreateAttributes(&pAttributes, 1);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
-    hr = pAttributes->lpVtbl->SetGUID(pAttributes, 
+    hr = pAttributes->lpVtbl->SetGUID(pAttributes,
                                       &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
                                       &DEVSOURCE_VIDCAP_GUID);
 
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     hr = MFEnumDeviceSources(pAttributes, &ppDevices, &count);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     /* freed by caller of this function */
     devices = (WCHAR **)malloc(sizeof(WCHAR *) * count);
     if (!devices) {
         hr = E_OUTOFMEMORY;
-        SETERROR(hr); 
+        HANDLEHR(hr);
     }
 
     for (int i=0; i<(int)count; i++) {
@@ -146,7 +149,7 @@ windows_list_cameras(int *num_devices)
     cleanup:
         RELEASE(pAttributes);
         for (int i=0; i<(int)count; i++) {
-            RELEASE(ppDevices[i]);         
+            RELEASE(ppDevices[i]);
         }
         CoTaskMemFree(ppDevices);
         if FAILED(hr) {
@@ -162,7 +165,7 @@ windows_list_cameras(int *num_devices)
 }
 
 IMFActivate *
-windows_device_from_name(WCHAR* device_name) 
+windows_device_from_name(WCHAR* device_name)
 {
     IMFAttributes *pAttributes = NULL;
     IMFActivate **ppDevices = NULL;
@@ -171,15 +174,15 @@ windows_device_from_name(WCHAR* device_name)
     HRESULT hr;
 
     hr = MFCreateAttributes(&pAttributes, 1);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
-    hr = pAttributes->lpVtbl->SetGUID(pAttributes, 
-                                      &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, 
+    hr = pAttributes->lpVtbl->SetGUID(pAttributes,
+                                      &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
                                       &DEVSOURCE_VIDCAP_GUID);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     hr = MFEnumDeviceSources(pAttributes, &ppDevices, &count);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     for (int i=0; i<(int)count; i++) {
         if (!_get_name_from_activate(ppDevices[i], &_device_name)) {
@@ -204,7 +207,7 @@ windows_device_from_name(WCHAR* device_name)
     cleanup:
         RELEASE(pAttributes);
         for (int i=0; i<(int)count; i++) {
-            RELEASE(ppDevices[i]);  
+            RELEASE(ppDevices[i]);
         }
         CoTaskMemFree(ppDevices);
         return NULL;
@@ -232,7 +235,7 @@ _select_source_type(pgCameraObject* self, IMFMediaType **mp)
     while(1) {
         hr = self->reader->lpVtbl->GetNativeMediaType(self->reader,
                                                       FIRST_VIDEO,
-                                                      type_count, 
+                                                      type_count,
                                                       &media_type);
         if (hr) {
             break;
@@ -242,7 +245,7 @@ _select_source_type(pgCameraObject* self, IMFMediaType **mp)
     }
 
     if (!type_count) {
-        PyErr_SetString(pgExc_SDLError, 
+        PyErr_SetString(pgExc_SDLError,
                         "Could not find any video types on this camera");
         return 0;
     }
@@ -251,7 +254,7 @@ _select_source_type(pgCameraObject* self, IMFMediaType **mp)
     diagonal_distances = malloc(sizeof(int) * type_count);
     if (!native_types || !diagonal_distances) {
         hr = E_OUTOFMEMORY;
-        SETERROR(hr);
+        HANDLEHR(hr);
     }
 
     /* This is interesting
@@ -264,18 +267,18 @@ _select_source_type(pgCameraObject* self, IMFMediaType **mp)
         hr = self->reader->lpVtbl->GetNativeMediaType(self->reader,
                                                       FIRST_VIDEO, i,
                                                       &media_type);
-        SETERROR(hr);
+        HANDLEHR(hr);
 
         hr = media_type->lpVtbl->GetUINT64(media_type, &MF_MT_FRAME_SIZE,
                                            &size);
-        SETERROR(hr);
-    
+        HANDLEHR(hr);
+
         t_width = size >> 32;
         t_height = size << 32 >> 32;
 
         hr = media_type->lpVtbl->GetGUID(media_type, &MF_MT_SUBTYPE,
                                          &subtype);
-        SETERROR(hr);
+        HANDLEHR(hr);
 
         /* Debug printf for seeing what media types are available */
         /*
@@ -314,7 +317,7 @@ _select_source_type(pgCameraObject* self, IMFMediaType **mp)
 
     hr = native_types[index]->lpVtbl->GetUINT64(native_types[index],
                                                 &MF_MT_FRAME_SIZE, &size);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     self->width = size >> 32;
     self->height = size << 32 >> 32;
@@ -322,7 +325,7 @@ _select_source_type(pgCameraObject* self, IMFMediaType **mp)
     /* More debug printfs that could be handy in the future */
     /*
     printf("chosen index # =%i\n", index);
-    printf("chosen width=%lli, chosen height=%lli\n", size >> 32, 
+    printf("chosen width=%lli, chosen height=%lli\n", size >> 32,
            size << 32 >> 32);
     */
 
@@ -331,11 +334,11 @@ _select_source_type(pgCameraObject* self, IMFMediaType **mp)
     hr = native_types[index]->lpVtbl->GetUINT64(native_types[index],
                                                 &MF_MT_FRAME_RATE_RANGE_MAX,
                                                 &fps_max_ratio);
-    SETERROR(hr);
+    HANDLEHR(hr);
     hr = native_types[index]->lpVtbl->SetUINT64(native_types[index],
                                                 &MF_MT_FRAME_RATE,
                                                 fps_max_ratio);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     *mp = native_types[index];
     goto cleanup;
@@ -372,26 +375,27 @@ _select_conversion_type(pgCameraObject* self, IMFMediaType **mp)
     UINT64 size;
 
     hr = MFCreateMediaType(&conv_type);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_MAJOR_TYPE,
                                     &MFMediaType_Video);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     /* reconstruct the size num out of width/height set by the source */
     size = self->width;
     size = size << 32;
     size += self->height;
     hr = conv_type->lpVtbl->SetUINT64(conv_type, &MF_MT_FRAME_SIZE, size);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     if (self->color_out != YUV_OUT) {
         hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_SUBTYPE,
                                         &MFVideoFormat_RGB32);
-        SETERROR(hr);
+        HANDLEHR(hr);
 
-        hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type, MFT_SET_TYPE_TEST_ONLY);
-        SETERROR(hr);
+        hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type,
+                                              MFT_SET_TYPE_TEST_ONLY);
+        HANDLEHR(hr);
         self->pixelformat = MFVideoFormat_RGB32.Data1;
         depth = 4;
     }
@@ -399,31 +403,33 @@ _select_conversion_type(pgCameraObject* self, IMFMediaType **mp)
     else {
         hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_SUBTYPE,
                                         &MFVideoFormat_YUY2);
-        SETERROR(hr);
+        HANDLEHR(hr);
 
-        hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type, MFT_SET_TYPE_TEST_ONLY);
+        hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type,
+                                              MFT_SET_TYPE_TEST_ONLY);
         if (hr == -1072875852) { //MF_E_INVALIDMEDIATYPE
             hr = conv_type->lpVtbl->SetGUID(conv_type, &MF_MT_SUBTYPE,
                                             &MFVideoFormat_RGB32);
-            SETERROR(hr);
+            HANDLEHR(hr);
 
-            hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type, MFT_SET_TYPE_TEST_ONLY);
-            SETERROR(hr);
+            hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type,
+                                                  MFT_SET_TYPE_TEST_ONLY);
+            HANDLEHR(hr);
             self->pixelformat = MFVideoFormat_RGB32.Data1;
             depth = 4;
         }
         else {
-            SETERROR(hr);
+            HANDLEHR(hr);
             self->pixelformat = MFVideoFormat_YUY2.Data1;
             depth = 2;
-        }   
+        }
     }
 
     /* make sure the output is right side up by default
      * multiplied by 4 because that is the number of bytes per pixel */
-    hr = conv_type->lpVtbl->SetUINT32(conv_type, &MF_MT_DEFAULT_STRIDE, 
+    hr = conv_type->lpVtbl->SetUINT32(conv_type, &MF_MT_DEFAULT_STRIDE,
                                       self->width * depth);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     *mp = conv_type;
     return 1;
@@ -433,7 +439,7 @@ _select_conversion_type(pgCameraObject* self, IMFMediaType **mp)
         return 0;
 }
 
-DWORD WINAPI 
+DWORD WINAPI
 update_function(LPVOID lpParam)
 {
     pgCameraObject* self = (pgCameraObject*) lpParam;
@@ -465,7 +471,7 @@ update_function(LPVOID lpParam)
         else {
             hr = self->control->lpVtbl->SetMirror(self->control,
                                                   MIRROR_NONE);
-            CHECKHR(hr);            
+            CHECKHR(hr);
         }
 
         if (self->vflip != self->last_vflip) {
@@ -477,11 +483,11 @@ update_function(LPVOID lpParam)
                                                 &MF_MT_DEFAULT_STRIDE,
                                                 &stride);
             CHECKHR(hr);
-            hr = output_type->lpVtbl->SetUINT32(output_type, 
+            hr = output_type->lpVtbl->SetUINT32(output_type,
                                                 &MF_MT_DEFAULT_STRIDE,
                                                 -stride);
             CHECKHR(hr);
-            hr = self->transform->lpVtbl->SetOutputType(self->transform, 
+            hr = self->transform->lpVtbl->SetOutputType(self->transform,
                                                         0, output_type, 0);
             CHECKHR(hr);
             self->last_vflip = self->vflip;
@@ -555,8 +561,8 @@ windows_open_device(pgCameraObject *self)
     IMFActivate *act = windows_device_from_name(self->device_name);
 
     hr = act->lpVtbl->ActivateObject(act, &IID_IMFMediaSource, &source);
-    SETERROR(hr);
     RELEASE(act);
+    HANDLEHR(hr);
 
     /* The commented out code below sets the source reader to use video
      * processing, which guarantees it can output RGB32 from any format.
@@ -575,45 +581,45 @@ windows_open_device(pgCameraObject *self)
 
     hr = MFCreateSourceReaderFromMediaSource(source, NULL, &reader);
     self->reader = reader;
-    SETERROR(hr);
     RELEASE(source);
-    
+    HANDLEHR(hr);
+
     if(!_select_source_type(self, &source_type)) {
         return 0;
     }
 
-    hr = reader->lpVtbl->SetCurrentMediaType(reader, FIRST_VIDEO, NULL, 
+    hr = reader->lpVtbl->SetCurrentMediaType(reader, FIRST_VIDEO, NULL,
                                              source_type);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     hr = CoCreateInstance(&CLSID_VideoProcessorMFT, NULL,
                           CLSCTX_INPROC_SERVER, &IID_IMFTransform,
                           &transform);
     self->transform = transform;
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     hr = transform->lpVtbl->QueryInterface(transform,
                                            &IID_IMFVideoProcessorControl,
                                            &control);
     self->control = control;
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     hr = transform->lpVtbl->SetInputType(transform, 0, source_type, 0);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     if (!_select_conversion_type(self, &conv_type)) {
         return 0;
     }
 
     hr = transform->lpVtbl->SetOutputType(transform, 0, conv_type, 0);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
-    hr = self->transform->lpVtbl->GetOutputStreamInfo(self->transform, 0, 
+    hr = self->transform->lpVtbl->GetOutputStreamInfo(self->transform, 0,
                                                       &info);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     hr = MFCreateMemoryBuffer(info.cbSize, &self->buf);
-    SETERROR(hr);
+    HANDLEHR(hr);
 
     self->t_handle = CreateThread(NULL, 0, update_function, self, 0, NULL);
 
@@ -684,10 +690,12 @@ windows_process_image(pgCameraObject *self, BYTE* data, DWORD length,
                 bgr32_to_rgb(data, surf->pixels, size, surf->format);
                 break;
             case YUV_OUT:
-                rgb_to_yuv(data, surf->pixels, size, V4L2_PIX_FMT_XBGR32, surf->format);
+                rgb_to_yuv(data, surf->pixels, size,
+                           V4L2_PIX_FMT_XBGR32, surf->format);
                 break;
             case HSV_OUT:
-                rgb_to_hsv(data, surf->pixels, size, V4L2_PIX_FMT_XBGR32, surf->format);
+                rgb_to_hsv(data, surf->pixels, size,
+                           V4L2_PIX_FMT_XBGR32, surf->format);
                 break;
         }
     }
@@ -702,7 +710,8 @@ windows_process_image(pgCameraObject *self, BYTE* data, DWORD length,
                 break;
             case HSV_OUT:
                 yuyv_to_rgb(data, surf->pixels, size, surf->format);
-                rgb_to_hsv(surf->pixels, surf->pixels, size, V4L2_PIX_FMT_YUYV, surf->format);
+                rgb_to_hsv(surf->pixels, surf->pixels, size,
+                           V4L2_PIX_FMT_YUYV, surf->format);
                 break;
         }
     }
@@ -710,12 +719,18 @@ windows_process_image(pgCameraObject *self, BYTE* data, DWORD length,
     SDL_UnlockSurface(surf);
 
     return 1;
-}   
+}
 
 int
 windows_read_frame(pgCameraObject *self, SDL_Surface *surf)
 {
     HRESULT hr;
+
+    if (!self->open) {
+        PyErr_SetString(pgExc_SDLError,
+                        "Camera needs to be started to read data");
+        return 0;
+    }
 
     if (self->buf) {
         BYTE *buf_data;
@@ -741,14 +756,26 @@ windows_read_frame(pgCameraObject *self, SDL_Surface *surf)
 int
 windows_frame_ready(pgCameraObject *self)
 {
+    if (!self->open) {
+        PyErr_SetString(pgExc_SDLError,
+                        "Camera needs to be started to read data");
+        return 0;
+    }
+
     return self->buffer_ready;
-}              
+}
 
 PyObject*
 windows_read_raw(pgCameraObject *self)
 {
     PyObject* data = NULL;
     HRESULT hr;
+
+    if (!self->open) {
+        PyErr_SetString(pgExc_SDLError,
+                        "Camera needs to be started to read data");
+        return 0;
+    }
 
     if (self->raw_buf) {
         BYTE *buf_data;
@@ -767,7 +794,7 @@ windows_read_raw(pgCameraObject *self)
 
         return data;
     }
-    
+
     /* should this be an error instead? */
     Py_RETURN_NONE;
 }

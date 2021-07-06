@@ -465,9 +465,19 @@ camera_get_image(pgCameraObject *self, PyObject *arg)
         surf = pgSurface_AsSurface(surfobj);
     }
 
-    if(!windows_read_frame(self, surf)) {
+    if (!surf)
         return NULL;
+
+    if (surf->w != self->width || surf->h != self->height) {
+        return RAISE(PyExc_ValueError,
+                     "Destination surface not the correct width or height.");
     }
+
+    if (!windows_read_frame(self, surf))
+        return NULL;
+
+    if (!surf)
+        return NULL;
 
     if (surfobj) {
         Py_INCREF(surfobj);
