@@ -33,15 +33,40 @@
 
 /* HRESULT failure numbers can be looked up on
  * hresult.info to get the actual name */
-#define CHECKHR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media "\
-                                   "Foundation HRESULT failure %i on "\
-                                   "camera_windows.c line %i", hr, __LINE__);\
+#define FORMATHR(hr, line) PyErr_Format(pgExc_SDLError, "Media Foundation "\
+                                  "HRESULT failure %i on camera_windows.c "\
+                                  "line %i", hr, line);
+
+#define CHECKHR(hr) if FAILED(hr) {FORMATHR(hr, __LINE__)\
                                    return 0;}
 
-#define HANDLEHR(hr) if FAILED(hr) {PyErr_Format(pgExc_SDLError, "Media "\
-                                    "Foundation HRESULT failure %i on camera"\
-                                    "_windows.c line %i", hr, __LINE__);\
+#define HANDLEHR(hr) if FAILED(hr) {FORMATHR(hr, __LINE__)\
                                     goto cleanup;}
+
+#define T_HANDLEHR(hr) if FAILED(hr) {self->t_error = hr;\
+                                      self->t_error_line = __LINE__;\
+                                      break;}
+
+#define T_FORMATHR(hr, line) PyErr_Format(pgExc_SDLError, "Media Foundation "\
+                                   "HRESULT failure %i on camera_windows.c "\
+                                   "line %i (Capture Thread Quit)", hr, line);
+
+int
+_check_integrity(pgCameraObject* self)
+{
+    if FAILED(self->t_error) {
+        /* MF_E_HW_MFT_FAILED_START_STREAMING */
+        if (self->t_error == -1072875772) {
+            PyErr_SetString(PyExc_SystemError,
+                            "Camera already in use (Capture Thread Quit)");
+        }
+        else {
+            T_FORMATHR(self->t_error, self->t_error_line)
+        }
+        return 0;
+    }
+    return 1;
+}
 
 #define FIRST_VIDEO MF_SOURCE_READER_FIRST_VIDEO_STREAM
 #define DEVSOURCE_VIDCAP_GUID MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID
@@ -466,41 +491,36 @@ update_function(LPVOID lpParam)
         if (self->hflip) {
             hr = self->control->lpVtbl->SetMirror(self->control,
                                                   MIRROR_HORIZONTAL);
-            CHECKHR(hr);
+            T_HANDLEHR(hr);
         }
         else {
             hr = self->control->lpVtbl->SetMirror(self->control,
                                                   MIRROR_NONE);
-            CHECKHR(hr);
+            T_HANDLEHR(hr);
         }
 
         if (self->vflip != self->last_vflip) {
             hr = self->transform->lpVtbl->GetOutputCurrentType(self->transform,
                                                                0,
                                                                &output_type);
-            CHECKHR(hr);
+            T_HANDLEHR(hr);
             hr = output_type->lpVtbl->GetUINT32(output_type,
                                                 &MF_MT_DEFAULT_STRIDE,
                                                 &stride);
-            CHECKHR(hr);
+            T_HANDLEHR(hr);
             hr = output_type->lpVtbl->SetUINT32(output_type,
                                                 &MF_MT_DEFAULT_STRIDE,
                                                 -stride);
-            CHECKHR(hr);
+            T_HANDLEHR(hr);
             hr = self->transform->lpVtbl->SetOutputType(self->transform,
                                                         0, output_type, 0);
-            CHECKHR(hr);
+            T_HANDLEHR(hr);
             self->last_vflip = self->vflip;
         }
 
         hr = reader->lpVtbl->ReadSample(reader, FIRST_VIDEO, 0, 0,
                                         &pdwStreamFlags, NULL, &sample);
-        if (hr == -1072875772) { //MF_E_HW_MFT_FAILED_START_STREAMING
-            PyErr_SetString(PyExc_SystemError, "Camera already in use");
-            return 0;
-            //TODO: how are errors from this thread going to work?
-        }
-        CHECKHR(hr);
+        T_HANDLEHR(hr);
 
         if (!self->open) {
             RELEASE(sample);
@@ -514,16 +534,17 @@ update_function(LPVOID lpParam)
 
             hr = self->transform->lpVtbl->ProcessInput(self->transform, 0,
                                                        sample, 0);
-            CHECKHR(hr);
+            T_HANDLEHR(hr);
 
             MFT_OUTPUT_DATA_BUFFER mft_buffer[1];
             MFT_OUTPUT_DATA_BUFFER x;
 
             IMFSample* ns;
             hr = MFCreateSample(&ns);
-            CHECKHR(hr);
+            T_HANDLEHR(hr);
 
-            CHECKHR(ns->lpVtbl->AddBuffer(ns, self->buf));
+            hr = ns->lpVtbl->AddBuffer(ns, self->buf);
+            T_HANDLEHR(hr);
 
             x.pSample = ns;
             x.dwStreamID = 0;
@@ -534,7 +555,7 @@ update_function(LPVOID lpParam)
             DWORD out;
             hr = self->transform->lpVtbl->ProcessOutput(self->transform, 0, 1,
                                                         mft_buffer, &out);
-            CHECKHR(hr);
+            T_HANDLEHR(hr);
 
             self->buffer_ready = 1;
         }
@@ -542,7 +563,7 @@ update_function(LPVOID lpParam)
         RELEASE(sample);
     }
 
-    printf("exiting 2nd thread...\n");
+    /* printf("exiting 2nd thread...\n"); */
     ExitThread(0);
 }
 
@@ -624,6 +645,8 @@ windows_open_device(pgCameraObject *self)
     self->t_handle = CreateThread(NULL, 0, update_function, self, 0, NULL);
 
     self->open = 1; /* set here, since this shouldn't happen on error */
+    self->t_error = S_OK;
+    self->t_error_line = 0;
     return 1;
 
     cleanup:
@@ -732,6 +755,10 @@ windows_read_frame(pgCameraObject *self, SDL_Surface *surf)
         return 0;
     }
 
+    if (!_check_integrity(self)) {
+        return 0;
+    };
+
     if (self->buf) {
         BYTE *buf_data;
         DWORD buf_max_length;
@@ -754,15 +781,21 @@ windows_read_frame(pgCameraObject *self, SDL_Surface *surf)
 }
 
 int
-windows_frame_ready(pgCameraObject *self)
+windows_frame_ready(pgCameraObject *self, int *result)
 {
+    *result = self->buffer_ready;
+
     if (!self->open) {
         PyErr_SetString(pgExc_SDLError,
                         "Camera needs to be started to read data");
         return 0;
     }
 
-    return self->buffer_ready;
+    if (!_check_integrity(self)) {
+        return 0;
+    };
+
+    return 1;
 }
 
 PyObject*
@@ -776,6 +809,10 @@ windows_read_raw(pgCameraObject *self)
                         "Camera needs to be started to read data");
         return 0;
     }
+    
+    if (!_check_integrity(self)) {
+        return 0;
+    };
 
     if (self->raw_buf) {
         BYTE *buf_data;

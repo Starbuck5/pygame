@@ -145,6 +145,8 @@ typedef struct pgCameraObject {
     int buffer_ready;
     short open; /* used to signal the update_function to exit */
     HANDLE t_handle;
+    HRESULT t_error;
+    int t_error_line;
     int width;
     int height;
     int hflip;
@@ -243,7 +245,7 @@ int windows_open_device(pgCameraObject* self);
 IMFActivate* windows_device_from_name(WCHAR* device_name);
 int windows_close_device(pgCameraObject* self);
 int windows_read_frame(pgCameraObject* self, SDL_Surface* surf);
-int windows_frame_ready(pgCameraObject* self);
+int windows_frame_ready(pgCameraObject* self, int* result);
 PyObject* windows_read_raw(pgCameraObject* self);
 int windows_process_image(pgCameraObject *self, BYTE* data, DWORD buffer_size,
                           SDL_Surface *surf);

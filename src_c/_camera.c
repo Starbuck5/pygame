@@ -359,7 +359,11 @@ camera_query_image(pgCameraObject *self, PyObject *args)
 #if defined(__unix__)
     return PyBool_FromLong(v4l2_query_buffer(self));
 #elif defined(PYGAME_WINDOWS_CAMERA)
-    return PyBool_FromLong(windows_frame_ready(self));
+    int ready;
+    if (!windows_frame_ready(self, &ready))
+        return NULL;
+
+    return PyBool_FromLong(ready);
 #endif
     Py_RETURN_TRUE;
 }
